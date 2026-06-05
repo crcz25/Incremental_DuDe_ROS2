@@ -21,26 +21,24 @@
 /*              Stony Brook, NY 11794-3600, USA                              */
 /*                                                                           */
 /*****************************************************************************/
- 
+
 /*                                                                           */
 /* descriptions of procedure headers used                                    */
 /*                                                                           */
 
 /* api_functions.c: */
 
-void HandlePolyhedron(boolean write_tri, char tri_file[], boolean write_geom, 
+void HandlePolyhedron(boolean write_tri, char tri_file[], boolean write_geom,
                       boolean time, char input_file[]);
 
-void HandlePolygon(char output_file[], boolean save_polygon, 
-                   int step_size, boolean write_geom, boolean write_tri,
-                   char tri_file[], boolean write_ipe, boolean time,
-                   int io_flag, char input_file[]);
+void HandlePolygon(char output_file[], boolean save_polygon, int step_size,
+                   boolean write_geom, boolean write_tri, char tri_file[],
+                   boolean write_ipe, boolean time, int io_flag,
+                   char input_file[]);
 
-void FIST_PolygonalArray(int num_contours, int num_vertices[], 
+void FIST_PolygonalArray(int num_contours, int num_vertices[],
                          double (*input_vtx)[2], int *num_triangles,
                          int (*output_tri)[3]);
-
-
 
 /* compute.c: */
 
@@ -53,16 +51,12 @@ void TerminateProgram(double cpu_time);
 
 void ResetAll(void);
 
-
-
-
 /* memory.c: */
 
-void *ReallocateArray(void *old_ptr, int number, size_t size, 
-                      char var_name[]);
+void *ReallocateArray(void *old_ptr, int number, size_t size, char var_name[]);
 
 #ifdef DEBUG_MEMORY
-boolean IndexOutOfBounds(void *array_ptr, char var_name[], size_t size, 
+boolean IndexOutOfBounds(void *array_ptr, char var_name[], size_t size,
                          int index);
 #endif
 
@@ -73,9 +67,6 @@ unsigned machine_long ReportMaxNumberBytes(void);
 unsigned machine_long ReportCurrNumberBytes(void);
 
 boolean AllMemoryFreed();
-
-
-
 
 /* data.c: */
 
@@ -97,9 +88,6 @@ boolean InPointsList(int index);
 
 void InitStoragePnts(int number);
 
-
-
-
 /* redraw.c: */
 
 #ifdef GRAPHICS
@@ -111,8 +99,7 @@ void AddPntToBuffer(int index, int color);
 
 void AddEdgeToBuffer(int index1, int index2, int color);
 
-void AddTriToBuffer(int index1, int index2, int index3, int color1, 
-                    int color2);
+void AddTriToBuffer(int index1, int index2, int index3, int color1, int color2);
 
 void DecrementPntBuffer(void);
 
@@ -124,7 +111,6 @@ void ResetTriBuffer(void);
 
 void UpdatePntEdgeBuffers(void);
 #endif
-
 
 /* graphics.c: */
 
@@ -147,8 +133,6 @@ boolean ClipLine(int xs, int ys, int xe, int ye);
 
 void ResetGraphicsData(void);
 #endif
-
-
 
 /* io.c: */
 
@@ -178,29 +162,22 @@ void WriteFaces(char output_file[]);
 
 void ReadPolyhedron(char input_file[]);
 
-
-
-
 /* arg_eval.c: */
 
 boolean ArgEval(int argc, char *argv[], boolean *color_graphics,
                 boolean *graphics, boolean *save_poly, char *output_file,
-                boolean *read_input, char *input_file,  boolean *read_poly,
-                boolean *do_quads, boolean *keep_quads,
-                int *step_size, boolean *write_geom, boolean *verbose,
-                boolean *read_obj, boolean *write_tri, char *tri_file,
-                boolean *write_ipe, boolean *help, boolean *time,
-                boolean *statistics, boolean *ears_sorted, 
-                boolean *ears_strip, boolean *ears_random, boolean *ears_fancy,
-                boolean *copy, boolean *use_colors,
+                boolean *read_input, char *input_file, boolean *read_poly,
+                boolean *do_quads, boolean *keep_quads, int *step_size,
+                boolean *write_geom, boolean *verbose, boolean *read_obj,
+                boolean *write_tri, char *tri_file, boolean *write_ipe,
+                boolean *help, boolean *time, boolean *statistics,
+                boolean *ears_sorted, boolean *ears_strip, boolean *ears_random,
+                boolean *ears_fancy, boolean *copy, boolean *use_colors,
                 boolean *draw_concave, boolean *sgi_output, boolean *quiet,
-                boolean *draw_groups, boolean *convex_faces, 
-                boolean *make_convex); 
+                boolean *draw_groups, boolean *convex_faces,
+                boolean *make_convex);
 
 void EvalError(void);
-
-
-
 
 /* list.c: */
 
@@ -276,8 +253,6 @@ void InitFace(int number);
 
 void DecrementFaces(void);
 
-
-
 /* clean_data.c: */
 
 void CleanPolygon(int *removed);
@@ -285,9 +260,6 @@ void CleanPolygon(int *removed);
 void CleanPolyhedralFace(int loop_min, int loop_max, int *removed);
 
 void FreeUnsorted(void);
-
-
-
 
 /* numerics.c: */
 
@@ -311,7 +283,6 @@ int SpikeAngle(int i, int j, int k, list_ind ind);
 
 boolean PointInTriangle(int i1, int i2, int i3, int i4);
 
-
 /* orientation.c: */
 
 void AdjustOrientation(int i1, int i2);
@@ -321,9 +292,6 @@ void DetermineOrientation(list_ind ind);
 double PolygonArea(list_ind ind);
 
 void FreeOrientation(void);
-
-
-
 
 /* ear_clip.c: */
 
@@ -339,8 +307,6 @@ void SetConvexityStatus(boolean status);
 
 void SetTangentNumber(int number);
 
-
-
 /* heap.c: */
 
 void FreeHeap(void);
@@ -355,9 +321,6 @@ boolean DeleteFromHeap(list_ind *ind, list_ind *prev, list_ind *next);
 void InitHeap(void);
 
 void MakeHeap(void);
-
-
-
 
 /* vertex.c: */
 
@@ -419,14 +382,9 @@ boolean InT_VertexList(int index);
 void FreeI_Triangles();
 #endif
 
-
-
 /* misc.c: */
 
 void Fake3D(void);
-
-
-
 
 /* desperate.c: */
 
@@ -437,9 +395,6 @@ boolean LetsHope(list_ind ind);
 void FreeDistances(void);
 
 int WindingNumber(list_ind ind, point p);
-
-
-
 
 /* bridge.c: */
 
@@ -452,26 +407,17 @@ boolean FindBridge(list_ind ind, int i, int start, list_ind *ind1, int *i1);
 void InsertBridge(list_ind ind1, int i1, list_ind ind3, int i3);
 
 int d_comp();
- 
+
 void FreeBridges(void);
-
-
-
 
 /* project.c: */
 
 void ProjectFace(int loop_min, int loop_max);
 
-
-
-
 /* triangulate.c: */
 
-void Triangulate(boolean write_tri, char tri_file[], boolean write_geom, 
+void Triangulate(boolean write_tri, char tri_file[], boolean write_geom,
                  boolean time, double *cpu_time);
-
-
-
 
 /* write_ipe.c: */
 
@@ -479,36 +425,25 @@ void WriteIpePolygon(void);
 
 void WriteIpeOutput(void);
 
-
-
-
 /* simple.c: */
 
 boolean SimpleFace(list_ind ind1);
 
 boolean TrivialPolygon(list_ind ind1);
 
-
-
 /* elapsed.c: */
 
 double elapsed();
-
-
-
 
 /* statistics.c: */
 
 void Statistics(double *min_angle, double *avg_min_angle, int num_dist,
                 double angle_dist[]);
 
-
-
-
 /* bv_tree.c: */
 
-boolean TreeIntersectionExists(bounding_box bb, int i1, int i2,
-                               list_ind ind5, int i5);
+boolean TreeIntersectionExists(bounding_box bb, int i1, int i2, list_ind ind5,
+                               int i5);
 
 void FreeTree(void);
 
@@ -516,20 +451,16 @@ void BuildTree(int loop_min, int loop_max);
 
 void InsertSegmentIntoTree(bounding_box bb);
 
-boolean DeleteSegmentFromTree(tree_ind node, bounding_box bb, 
-                              boolean *deleted);
+boolean DeleteSegmentFromTree(tree_ind node, bounding_box bb, boolean *deleted);
 
 void UpdateTree(int i1, int i2, int i3);
 
 double TopQuality(int i1, int i2, bounding_box_extended bb_e);
 
-
-
-
 /* grid.c: */
 
-boolean GridIntersectionExists(bounding_box bb, int i1, int i2,
-                               list_ind ind5, int i5);
+boolean GridIntersectionExists(bounding_box bb, int i1, int i2, list_ind ind5,
+                               int i5);
 
 void InsertSegmentIntoGrid(bounding_box bb);
 
@@ -543,40 +474,28 @@ void BuildPntsGrid(int loop_ind);
 
 void BuildBuckets(int i);
 
-boolean BucketIntersectionExists(int i1, list_ind ind1, int i2, int i3, 
+boolean BucketIntersectionExists(int i1, list_ind ind1, int i2, int i3,
                                  bounding_box bb);
 
 void DeleteReflexVertex(list_ind ind);
-
-
-
 
 /* bottleneck.c: */
 
 boolean CheckBottleNeck(int i1, int i2, int i3, list_ind ind4);
 
-
-
-
 /* quads.c: */
 
 void DetermineQuads(void);
 
-
-
 /* degenerate.c: */
 
-boolean HandleDegeneracies(int i1, list_ind ind1, int i2, int i3, int i4, 
+boolean HandleDegeneracies(int i1, list_ind ind1, int i2, int i3, int i4,
                            list_ind ind4);
-
-
 
 /* thin.c: */
 
 void Thin(char output_file[], boolean save_polygon, boolean new_input,
           int keep_pnts, boolean time, double *cpu_time);
-
-
 
 /* no_hash.c: */
 
@@ -586,7 +505,7 @@ void FreeNoHash(void);
 
 void PrepareNoHashPnts(int curr_loop_min);
 
-boolean NoHashIntersectionExists(int i1, list_ind ind1, int i2, int i3, 
+boolean NoHashIntersectionExists(int i1, list_ind ind1, int i2, int i3,
                                  bounding_box bb);
 
 void DeleteReflexVertex(list_ind ind);

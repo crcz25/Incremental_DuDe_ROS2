@@ -17,18 +17,17 @@
 #include <iostream>
 
 //------------------------------------------------------------------------
-inline double getTime() //in millisecond
+inline double getTime() // in millisecond
 {
 #ifdef _WIN32
-    return timeGetTime();
-#else 
-    //assuming unix-type systems
-    //timezone tz;
-    timeval  tv;
-    gettimeofday(&tv, NULL);
-    return (tv.tv_sec*1000000+tv.tv_usec)*1.0/1000;
+  return timeGetTime();
+#else
+  // assuming unix-type systems
+  // timezone tz;
+  timeval tv;
+  gettimeofday(&tv, NULL);
+  return (tv.tv_sec * 1000000 + tv.tv_usec) * 1.0 / 1000;
 #endif
 }
 
 #endif //_GETTIME_H_
-

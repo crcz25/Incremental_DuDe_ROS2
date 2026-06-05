@@ -3,19 +3,18 @@
 //  Defines.h
 //
 //  General Description
-//  This an example of how the includes should look like in order to have compatibility
-//  with different STLs
-//  Created
+//  This an example of how the includes should look like in order to have
+//  compatibility with different STLs Created
 //      Gabriel Tanase
 //
 /////////////////////////////////////////////////////////////////////
 
-//include standard headers
-#include <stdlib.h>
-#include <stdio.h>
-#include <time.h>
-#include <math.h>
+// include standard headers
 #include <assert.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 /*
 #ifndef  _STL_PORT
@@ -24,12 +23,12 @@
 #include <iostream.h>
 #include <fstream.h>
 #include <iomanip.h>
-#include <algorithm>    
-#include <list>     
-#include <vector>       
-#include <deque>        
-#include <stack>        
-#include <map> 
+#include <algorithm>
+#include <list>
+#include <vector>
+#include <deque>
+#include <stack>
+#include <map>
 #include <iterator>
 
 #else
@@ -37,12 +36,12 @@
 #include <iostream.h>
 #include <fstream.h>
 #include <iomanip.h>
-#include <algo.h>   
-#include <list.h>   
+#include <algo.h>
+#include <list.h>
 #include <vector.h>
-#include <deque.h>  
-#include <stack.h> 
-#include <map.h> 
+#include <deque.h>
+#include <stack.h>
+#include <map.h>
 #include <iterator.h>
 #endif
 #endif
@@ -51,12 +50,12 @@
 #include <iostream.h>
 #include <fstream.h>
 #include <iomanip.h>
-#include <algorithm>    
-#include <list>     
+#include <algorithm>
+#include <list>
 #include <vector>
-#include <deque>  
-#include <stack>  
-#include <map> 
+#include <deque>
+#include <stack>
+#include <map>
 #include <iterator>
 #endif
 
@@ -65,12 +64,12 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
-#include <algorithm>    
-#include <list>     
-#include <vector>       
-#include <deque>        
-#include <stack>        
-#include <map> 
+#include <algorithm>
+#include <list>
+#include <vector>
+#include <deque>
+#include <stack>
+#include <map>
 #include <iterator>
 #endif
 using namespace std;
@@ -79,41 +78,40 @@ using namespace std;
 #include <iostream>
 #include <fstream>
 #include <iomanip>
-#include <algorithm>    
-#include <list>     
-#include <vector>       
-#include <deque>        
-#include <stack>        
-#include <map> 
+#include <algorithm>
+#include <list>
+#include <vector>
+#include <deque>
+#include <stack>
+#include <map>
 #include <iterator>
 #endif
 
-//STL_PORT 
+//STL_PORT
 #else
 */
-#include <iostream>
-#include <ostream>
+#include <algorithm>
+#include <deque>
 #include <fstream>
 #include <iomanip>
-#include <algorithm>    
-#include <list>     
-#include <vector>       
-#include <deque>        
-#include <queue>        
-#include <stack>   
-#include <map>
-#include <set>
+#include <iostream>
 #include <iterator>
-//#include <hash_map>
-//using namespace _STLP_STD;
+#include <list>
+#include <map>
+#include <ostream>
+#include <queue>
+#include <set>
+#include <stack>
+#include <vector>
+// #include <hash_map>
+// using namespace _STLP_STD;
 using namespace std;
-//#endif
+// #endif
 
 #ifndef OK
-#define OK  0
+#define OK 0
 #endif
 
 #ifndef ERROR
 #define ERROR -1
 #endif
-

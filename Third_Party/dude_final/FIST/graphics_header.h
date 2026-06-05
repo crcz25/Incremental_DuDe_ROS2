@@ -21,41 +21,49 @@
 /*              Stony Brook, NY 11794-3600, USA                              */
 /*                                                                           */
 /*****************************************************************************/
- 
+
 /* graphics.c */
 
 #ifdef GRAPHICS
 
-void SetBB(machine_double *xl, machine_double *yl, machine_double *xr, machine_double *yr,
-           machine_double xl_bb, machine_double yl_bb, machine_double xr_bb, machine_double yr_bb);
+void SetBB(machine_double *xl, machine_double *yl, machine_double *xr,
+           machine_double *yr, machine_double xl_bb, machine_double yl_bb,
+           machine_double xr_bb, machine_double yr_bb);
 
-void InitializeMapping(machine_double xl, machine_double yl, machine_double xr, machine_double yr,
-                       int imax, int jmax, machine_double *scale,
-                       machine_double *xm, machine_double *ym, int *im, int *jm);
+void InitializeMapping(machine_double xl, machine_double yl, machine_double xr,
+                       machine_double yr, int imax, int jmax,
+                       machine_double *scale, machine_double *xm,
+                       machine_double *ym, int *im, int *jm);
 
-void DrawLine(Display *mydisplay, Window  mywindow, GC mygc,
-              int im, int jm, machine_double scale, machine_double xm, machine_double ym,
-              machine_double xc1, machine_double yc1, machine_double xc2, machine_double yc2);
+void DrawLine(Display *mydisplay, Window mywindow, GC mygc, int im, int jm,
+              machine_double scale, machine_double xm, machine_double ym,
+              machine_double xc1, machine_double yc1, machine_double xc2,
+              machine_double yc2);
 
-void DrawTriangle(Display *mydisplay, Window  mywindow, GC mygc,
-                  int im, int jm, machine_double scale, machine_double xm, machine_double ym,
-                  machine_double xc1, machine_double yc1, machine_double xc2, machine_double yc2,
-                  machine_double xc3, machine_double yc3);
+void DrawTriangle(Display *mydisplay, Window mywindow, GC mygc, int im, int jm,
+                  machine_double scale, machine_double xm, machine_double ym,
+                  machine_double xc1, machine_double yc1, machine_double xc2,
+                  machine_double yc2, machine_double xc3, machine_double yc3);
 
-void DrawFilledTriangle(Display *mydisplay, Window  mywindow, GC mygc,
-                        int im, int jm, machine_double scale, machine_double xm, machine_double ym,
-                        machine_double xc1, machine_double yc1, machine_double xc2, machine_double yc2,
-                        machine_double xc3, machine_double yc3);
+void DrawFilledTriangle(Display *mydisplay, Window mywindow, GC mygc, int im,
+                        int jm, machine_double scale, machine_double xm,
+                        machine_double ym, machine_double xc1,
+                        machine_double yc1, machine_double xc2,
+                        machine_double yc2, machine_double xc3,
+                        machine_double yc3);
 
-void DrawFilledCircle(Display *mydisplay, Window  mywindow, GC mygc,
-                      int im, int jm, machine_double scale, machine_double xm, machine_double ym,
-                      machine_double xc1, machine_double yc1, unsigned int radius);
+void DrawFilledCircle(Display *mydisplay, Window mywindow, GC mygc, int im,
+                      int jm, machine_double scale, machine_double xm,
+                      machine_double ym, machine_double xc1, machine_double yc1,
+                      unsigned int radius);
 
-void MapWorldCoordinates(machine_double scale, machine_double xm, machine_double ym, int im, int jm,
-                         machine_double x, machine_double y, int *i, int *j);
+void MapWorldCoordinates(machine_double scale, machine_double xm,
+                         machine_double ym, int im, int jm, machine_double x,
+                         machine_double y, int *i, int *j);
 
-void MapWindowCoordinates(machine_double scale, machine_double xm, machine_double ym, int im, int jm,
-                          int i,int j, machine_double *x, machine_double *y);
+void MapWindowCoordinates(machine_double scale, machine_double xm,
+                          machine_double ym, int im, int jm, int i, int j,
+                          machine_double *x, machine_double *y);
 
 void ConsumeTime(void);
 

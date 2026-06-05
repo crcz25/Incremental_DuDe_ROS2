@@ -26,10 +26,10 @@ SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake_modules)
 find_package(MPFR)
 
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES dude_ros
-#  CATKIN_DEPENDS tf
-#  DEPENDS system_lib
+  #  INCLUDE_DIRS include
+  #  LIBRARIES dude_ros
+  #  CATKIN_DEPENDS tf
+  #  DEPENDS system_lib
 )
 
 ###########
@@ -38,14 +38,14 @@ catkin_package(
 
 include_directories(
   ${catkin_INCLUDE_DIRS}
-  ${PROJECT_SOURCE_DIR}/Third_Party/dude_final  
-  ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src  
+  ${PROJECT_SOURCE_DIR}/Third_Party/dude_final
+  ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src
   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/mathtool
   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src/skeleton
   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src/draw
   ${CGAL_INCLUDE_DIRS}
-  ${PROJECT_SOURCE_DIR}/include  
-  ${PROJECT_SOURCE_DIR}/FIST  
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_SOURCE_DIR}/FIST
 )
 include(${CGAL_USE_FILE})
 
@@ -55,10 +55,10 @@ include(${CGAL_USE_FILE})
 ######## Files from DuDe
 
 file(GLOB DuDe_SOURCES
-   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src/*.cpp
-   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src/skeleton/*.cpp
-   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src/graph/*.cpp
-   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src/draw/*.cpp
+  ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src/*.cpp
+  ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src/skeleton/*.cpp
+  ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src/graph/*.cpp
+  ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src/draw/*.cpp
 
 )
 
@@ -71,16 +71,16 @@ file(GLOB DuDe_SOURCES
 
 
 ######## inc_DuDe_ros
-add_executable(inc_dude src/inc_dude.cpp  include/wrapper.cpp include/inc_decomp.cpp  ${DuDe_SOURCES})
+add_executable(inc_dude src/inc_dude.cpp include/wrapper.cpp include/inc_decomp.cpp ${DuDe_SOURCES})
 
 target_link_libraries(inc_dude
-   ${catkin_LIBRARIES}
-   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/FIST/FIST.lib
-   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/FIST/libFIST.linux64.a
-   ${CGAL_LIBRARIES} 
-   ${CGAL_3RD_PARTY_LIBRARIES}
-   ${MPFR_LIBRARIES}
- )
+  ${catkin_LIBRARIES}
+  ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/FIST/FIST.lib
+  ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/FIST/libFIST.linux64.a
+  ${CGAL_LIBRARIES}
+  ${CGAL_3RD_PARTY_LIBRARIES}
+  ${MPFR_LIBRARIES}
+)
 
 
 add_dependencies(inc_dude ${catkin_LIBRARIES} ${CGAL_LIBRARIES})
@@ -88,16 +88,16 @@ add_dependencies(inc_dude ${catkin_LIBRARIES} ${CGAL_LIBRARIES})
 
 
 ######## evaluation
-add_executable(evaluation src/evaluation.cpp  include/wrapper.cpp include/inc_decomp.cpp  ${DuDe_SOURCES})
+add_executable(evaluation src/evaluation.cpp include/wrapper.cpp include/inc_decomp.cpp ${DuDe_SOURCES})
 
 target_link_libraries(evaluation
-   ${catkin_LIBRARIES}
-   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/FIST/FIST.lib
-   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/FIST/libFIST.linux64.a
-   ${CGAL_LIBRARIES} 
-   ${CGAL_3RD_PARTY_LIBRARIES}
-   ${MPFR_LIBRARIES}
- )
+  ${catkin_LIBRARIES}
+  ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/FIST/FIST.lib
+  ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/FIST/libFIST.linux64.a
+  ${CGAL_LIBRARIES}
+  ${CGAL_3RD_PARTY_LIBRARIES}
+  ${MPFR_LIBRARIES}
+)
 
 
 add_dependencies(evaluation ${catkin_LIBRARIES} ${CGAL_LIBRARIES})

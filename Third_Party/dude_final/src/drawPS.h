@@ -7,7 +7,6 @@ using namespace std;
 //
 //
 
+void save2PS(const string &name);
 
-void save2PS(const string& name);
-
-//#endif
+// #endif

@@ -21,9 +21,9 @@
 /*              Stony Brook, NY 11794-3600, USA                              */
 /*                                                                           */
 /*****************************************************************************/
- 
+
 extern Display *mydisplay;
-extern Window   mywindow;
+extern Window mywindow;
 extern GC mygc;
 extern XEvent myevent;
 extern KeySym mykey;
@@ -32,7 +32,7 @@ extern Cursor mycursor;
 extern Colormap mycmap;
 extern XColor colors[10];
 
-extern int myscreen;   
+extern int myscreen;
 extern unsigned machine_long myforeground, mybackground;
 
 extern int imax, jmax, im, jm;
@@ -45,12 +45,12 @@ extern int first_pnt;
 /*                                                                           */
 /* colors for X11 drawing                                                    */
 /*                                                                           */
-#define  Green        1
-#define  Blue         2
-#define  White        3
-#define  Red          4
-#define  Cyan         5
-#define  Yellow       6
-#define  Orange       7
-#define  Magenta      8
-#define  Black        9
+#define Green 1
+#define Blue 2
+#define White 3
+#define Red 4
+#define Cyan 5
+#define Yellow 6
+#define Orange 7
+#define Magenta 8
+#define Black 9

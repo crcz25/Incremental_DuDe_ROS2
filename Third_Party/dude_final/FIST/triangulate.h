@@ -21,14 +21,13 @@
 /*              Stony Brook, NY 11794-3600, USA                              */
 /*                                                                           */
 /*****************************************************************************/
- 
+
 /*                                                                           */
 /* descriptions of procedure headers used                                    */
 /*                                                                           */
 
 /* api_functions.c: */
 
-void FIST_PolygonalArray(int num_contours, int num_vertices[], 
+void FIST_PolygonalArray(int num_contours, int num_vertices[],
                          double (*input_vtx)[2], int *num_triangles,
                          int (*output_tri)[3]);
-

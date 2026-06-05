@@ -22,7 +22,6 @@
 /*                                                                           */
 /*****************************************************************************/
 
-
 #ifndef _MARTIN_H_
 #define _MARTIN_H_
 /*                                                                           */
@@ -35,7 +34,6 @@
 double martin_h_local;
 
 #endif
-
 
 #ifndef _BASIC_H_
 #define _BASIC_H_
@@ -54,7 +52,6 @@ long basic_i_local;
 
 #endif
 
-
 #ifndef _MATRIX_H_
 #define _MATRIX_H_
 /*                                                                           */
@@ -68,7 +65,6 @@ double matrix_h_sine, matrix_h_cosine;
 double matrix_h_local;
 
 #endif
-
 
 #ifndef _NUMERICS_H_
 #define _NUMERICS_H_
@@ -84,7 +80,6 @@ double numerics_h_det, numerics_h_dot;
 int numerics_h_ori1, numerics_h_ori2;
 
 #endif
-
 
 #ifndef _BVTREE_H_
 #define _BVTREE_H_

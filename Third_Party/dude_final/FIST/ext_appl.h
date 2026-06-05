@@ -1,54 +1,53 @@
-#define  ExtApplFuncStoreTri_1
+#define ExtApplFuncStoreTri_1
 
-#define  ExtApplFuncStoreTri_2
+#define ExtApplFuncStoreTri_2
 
-#define  ExtApplFuncStoreQuad
+#define ExtApplFuncStoreQuad
 
-#define  ExtApplFuncStoreVNormal
+#define ExtApplFuncStoreVNormal
 
-#define  ExtApplFuncStoreTVertex
+#define ExtApplFuncStoreTVertex
 
-#define  ExtApplFuncStoreVertex
+#define ExtApplFuncStoreVertex
 
-#define  ExtApplFuncStorePnt
+#define ExtApplFuncStorePnt
 
-#define  ExtApplFuncNewInput
+#define ExtApplFuncNewInput
 
-#define  ExtApplFuncDesperate
+#define ExtApplFuncDesperate
 
-#define  ExtApplFuncReligious
+#define ExtApplFuncReligious
 
-#define  ExtApplFuncRestart
+#define ExtApplFuncRestart
 
-#define  ExtApplFuncDoneOneChain
+#define ExtApplFuncDoneOneChain
 
-#define  ExtApplFuncNextChain
+#define ExtApplFuncNextChain
 
-#define  ExtApplFuncFinished
+#define ExtApplFuncFinished
 
-#define  ExtApplFuncTerminateProg
+#define ExtApplFuncTerminateProg
 
-#define  ExtApplFuncResetAll
+#define ExtApplFuncResetAll
 
-#define  ExtApplFuncNewPoly
+#define ExtApplFuncNewPoly
 
-#define  ExtApplFuncNewFace
+#define ExtApplFuncNewFace
 
-#define  ExtApplFuncBeforeTriangulation
+#define ExtApplFuncBeforeTriangulation
 
-#define  ExtApplFuncDesperate3D
+#define ExtApplFuncDesperate3D
 
-#define  ExtApplFuncReligious3D
+#define ExtApplFuncReligious3D
 
-#define  ExtApplFuncRestart3D
+#define ExtApplFuncRestart3D
 
-#define  ExtApplFuncDoneOneChain3D
+#define ExtApplFuncDoneOneChain3D
 
-#define  ExtApplFuncNextChain3D
+#define ExtApplFuncNextChain3D
 
-#define  ExtApplFuncDoneOneFace
+#define ExtApplFuncDoneOneFace
 
-#define  ExtApplFuncDoneOneGroup
+#define ExtApplFuncDoneOneGroup
 
-#define  ExtApplFuncFinished3D
-
+#define ExtApplFuncFinished3D

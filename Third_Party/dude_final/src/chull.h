@@ -7,8 +7,8 @@
 #define _2D_CONVEX_HULL_H_
 
 ///////////////////////////////////////////////////////////////////////////////
-// This convex hull implemetation realizes the idea from 
-// A. Melkman, "On-line construction of the convex hull of a simple polygon", 
+// This convex hull implemetation realizes the idea from
+// A. Melkman, "On-line construction of the convex hull of a simple polygon",
 // Info. Proc. Letters 25, 11-12 (1987)
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -19,7 +19,6 @@
 //
 // e mush be reachable from s
 //
-void hull2d(ply_vertex * s, ply_vertex * e, list<ply_vertex*>& hull );
+void hull2d(ply_vertex *s, ply_vertex *e, list<ply_vertex *> &hull);
 
 #endif //_2D_CONVEX_HULL_H_
-
