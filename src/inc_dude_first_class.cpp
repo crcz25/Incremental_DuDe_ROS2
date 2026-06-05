@@ -1,27 +1,29 @@
 // ROS
-#include "nav_msgs/GetMap.h"
-#include "ros/ros.h"
-#include "std_msgs/String.h"
+#include "nav_msgs/msg/occupancy_grid.hpp"
+#include "rclcpp/rclcpp.hpp"
 
 // openCV
-#include <cv_bridge/cv_bridge.h>
-#include <image_transport/image_transport.h>
+#include <cv_bridge/cv_bridge.hpp>
+#include <image_transport/image_transport.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <sensor_msgs/image_encodings.hpp>
 
 // DuDe
 #include "inc_decomp.hpp"
 
-class ROS_handler {
-  ros::NodeHandle n;
+#include <chrono>
+#include <functional>
+#include <memory>
 
-  image_transport::ImageTransport it_;
+class ROS_handler : public rclcpp::Node {
+
   image_transport::Subscriber image_sub_;
   image_transport::Publisher image_pub_;
   cv_bridge::CvImagePtr cv_ptr;
 
   std::string mapname_;
-  ros::Subscriber map_sub_;
-  ros::Timer timer;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+  rclcpp::TimerBase::SharedPtr timer;
 
   float Decomp_threshold_;
   Incremental_Decomposer inc_decomp;
@@ -31,13 +33,17 @@ class ROS_handler {
 
 public:
   ROS_handler(const std::string &mapname, float threshold)
-      : mapname_(mapname), it_(n), Decomp_threshold_(threshold) {
-    ROS_INFO("Waiting for the map");
-    map_sub_ = n.subscribe("map", 2, &ROS_handler::mapCallback,
-                           this); // mapname_ to include different name
-    timer = n.createTimer(ros::Duration(0.5), &ROS_handler::metronomeCallback,
-                          this);
-    image_pub_ = it_.advertise("/tagged_image", 1);
+      : Node("Inc_Dual_Decomposer"), mapname_(mapname),
+        Decomp_threshold_(
+            this->declare_parameter<double>("decomp_threshold", threshold)) {
+    RCLCPP_INFO(this->get_logger(), "Waiting for the map");
+    map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
+        mapname_, rclcpp::QoS(2).transient_local().reliable(),
+        std::bind(&ROS_handler::mapCallback, this, std::placeholders::_1));
+    timer = this->create_wall_timer(
+        std::chrono::milliseconds(500),
+        std::bind(&ROS_handler::metronomeCallback, this));
+    image_pub_ = image_transport::create_publisher(this, "/tagged_image");
 
     cv_ptr.reset(new cv_bridge::CvImage);
     cv_ptr->encoding = "mono8";
@@ -49,13 +55,13 @@ public:
   // ROS CALLBACKS
   ////////////////////////////////
 
-  void mapCallback(const nav_msgs::OccupancyGridConstPtr &map) {
+  void mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr map) {
     double begin_process, end_process, begin_whole, occupancy_time,
         decompose_time, drawPublish_time, whole_time;
     begin_whole = begin_process = getTime();
 
-    ROS_INFO("Received a %d X %d map @ %.3f m/pix", map->info.width,
-             map->info.height, map->info.resolution);
+    RCLCPP_INFO(this->get_logger(), "Received a %u X %u map @ %.3f m/pix",
+                map->info.width, map->info.height, map->info.resolution);
 
     ///////////////////////Occupancy to clean image
     cv::Mat grad, img(map->info.height, map->info.width, CV_8U);
@@ -107,8 +113,8 @@ public:
   }
 
   /////////////////
-  void metronomeCallback(const ros::TimerEvent &) {
-    //		  ROS_INFO("tic tac");
+  void metronomeCallback() {
+    //		  RCLCPP_INFO(this->get_logger(), "tic tac");
     publish_Image();
   }
 
@@ -145,7 +151,7 @@ public:
 
 int main(int argc, char **argv) {
 
-  ros::init(argc, argv, "Inc_Dual_Decomposer");
+  rclcpp::init(argc, argv);
 
   std::string mapname = "map";
 
@@ -154,8 +160,9 @@ int main(int argc, char **argv) {
     decomp_th = atof(argv[1]);
   }
 
-  ROS_handler mg(mapname, decomp_th);
-  ros::spin();
+  auto mg = std::make_shared<ROS_handler>(mapname, decomp_th);
+  rclcpp::spin(mg);
+  rclcpp::shutdown();
 
   return 0;
 }

@@ -1,17 +1,25 @@
 // ROS
-#include "nav_msgs/GetMap.h"
-#include "nav_msgs/Odometry.h"
-#include "ros/ros.h"
-#include "std_msgs/String.h"
-#include "visualization_msgs/MarkerArray.h"
+#include "geometry_msgs/msg/point.hpp"
+#include "geometry_msgs/msg/pose.hpp"
+#include "nav_msgs/msg/map_meta_data.hpp"
+#include "nav_msgs/msg/occupancy_grid.hpp"
+#include "nav_msgs/msg/odometry.hpp"
+#include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/string.hpp"
+#include "visualization_msgs/msg/marker.hpp"
 
 // openCV
-#include <cv_bridge/cv_bridge.h>
-#include <image_transport/image_transport.h>
+#include <cv_bridge/cv_bridge.hpp>
+#include <image_transport/image_transport.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <sensor_msgs/image_encodings.hpp>
 
 // DuDe
 #include "wrapper.hpp"
+
+#include <chrono>
+#include <functional>
+#include <memory>
 
 class Stable_graph {
 public:
@@ -31,26 +39,25 @@ public:
   void init_with_wrapper() { int a = 2; }
 };
 
-class ROS_handler {
-  ros::NodeHandle n;
+class ROS_handler : public rclcpp::Node {
 
-  image_transport::ImageTransport it_;
   image_transport::Subscriber image_sub_;
   image_transport::Publisher image_pub_;
   cv_bridge::CvImagePtr cv_ptr;
 
   std::string mapname_;
-  ros::Subscriber map_sub_;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr chatter_sub_;
   bool saved_map_;
 
-  ros::Timer timer;
+  rclcpp::TimerBase::SharedPtr timer;
 
   std::vector<std::vector<cv::Point>> Convex_Marker_;
-  ros::Publisher markers_pub_;
-  nav_msgs::MapMetaData Map_Info_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr markers_pub_;
+  nav_msgs::msg::MapMetaData Map_Info_;
 
-  ros::Subscriber odom_sub_;
-  nav_msgs::Odometry Odom_Info_;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+  nav_msgs::msg::Odometry Odom_Info_;
 
   float robot_position_[2];
   cv::Point robot_position_image_;
@@ -70,30 +77,36 @@ class ROS_handler {
   Stable_graph Stable;
   cv::Rect previous_rect;
 
-  geometry_msgs::Pose current_origin_;
+  geometry_msgs::msg::Pose current_origin_;
 
   std::vector<float> time_vector;
 
 public:
   ROS_handler(const std::string &mapname, float threshold)
-      : mapname_(mapname), saved_map_(false), it_(n),
-        Decomp_threshold_(threshold) {
+      : Node("Dual_Decomposer"), mapname_(mapname), saved_map_(false),
+        Decomp_threshold_(
+            this->declare_parameter<double>("decomp_threshold", threshold)) {
 
-    ROS_INFO("Waiting for the map");
-    map_sub_ = n.subscribe("map", 1, &ROS_handler::mapCallback, this);
-    ros::Subscriber chatter_sub_ =
-        n.subscribe("chatter", 1000, &ROS_handler::chatterCallback, this);
-    odom_sub_ =
-        n.subscribe("pose_corrected", 1, &ROS_handler::odomCallback, this);
-    timer = n.createTimer(ros::Duration(0.5), &ROS_handler::metronomeCallback,
-                          this);
-    image_pub_ = it_.advertise("/tagged_image", 1);
+    RCLCPP_INFO(this->get_logger(), "Waiting for the map");
+    map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
+        mapname_, rclcpp::QoS(1).transient_local().reliable(),
+        std::bind(&ROS_handler::mapCallback, this, std::placeholders::_1));
+    chatter_sub_ = this->create_subscription<std_msgs::msg::String>(
+        "chatter", 1000,
+        std::bind(&ROS_handler::chatterCallback, this, std::placeholders::_1));
+    odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
+        "pose_corrected", 1,
+        std::bind(&ROS_handler::odomCallback, this, std::placeholders::_1));
+    timer = this->create_wall_timer(
+        std::chrono::milliseconds(500),
+        std::bind(&ROS_handler::metronomeCallback, this));
+    image_pub_ = image_transport::create_publisher(this, "/tagged_image");
 
     cv_ptr.reset(new cv_bridge::CvImage);
     cv_ptr->encoding = "mono8";
 
-    markers_pub_ =
-        n.advertise<visualization_msgs::Marker>("skeleton_marker_", 10);
+    markers_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(
+        "skeleton_marker_", 10);
 
     Map_Info_.resolution = 0.05; // default;
     Map_Info_.width = 4000;      // default;
@@ -114,12 +127,12 @@ public:
   /////////////////////////////
   // ROS CALLBACKS
   ////////////////////////////////
-  void chatterCallback(const std_msgs::String::ConstPtr &msg) {
-    ROS_INFO("I heard: [%s]", msg->data.c_str());
+  void chatterCallback(const std_msgs::msg::String::SharedPtr msg) {
+    RCLCPP_INFO(this->get_logger(), "I heard: [%s]", msg->data.c_str());
   }
 
   //////////////////////////////////
-  void mapCallback(const nav_msgs::OccupancyGridConstPtr &map) {
+  void mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr map) {
 
     cv::Mat grad;
     float pixel_Tau = Decomp_threshold_ / Map_Info_.resolution;
@@ -144,8 +157,8 @@ public:
                 << std::endl;
       std::cout << "Pixel_Tau  " << pixel_Tau << std::endl;
 
-      ROS_INFO("Received a %d X %d map @ %.3f m/pix", map->info.width,
-               map->info.height, map->info.resolution);
+      RCLCPP_INFO(this->get_logger(), "Received a %u X %u map @ %.3f m/pix",
+                  map->info.width, map->info.height, map->info.resolution);
     }
 
     if ((map->info.origin.position.x != current_origin_.position.x) ||
@@ -193,8 +206,8 @@ public:
     cv::Mat will_be_destroyed = working_image.clone();
 
     std::vector<std::vector<cv::Point>> Differential_contour;
-    cv::findContours(will_be_destroyed, Differential_contour, CV_RETR_EXTERNAL,
-                     CV_CHAIN_APPROX_SIMPLE);
+    cv::findContours(will_be_destroyed, Differential_contour, cv::RETR_EXTERNAL,
+                     cv::CHAIN_APPROX_SIMPLE);
 
     // multiple contours
 
@@ -266,8 +279,8 @@ public:
 
     will_be_destroyed = expanded_drawing.clone();
     std::vector<std::vector<cv::Point>> Expanded_contour;
-    cv::findContours(will_be_destroyed, Expanded_contour, CV_RETR_EXTERNAL,
-                     CV_CHAIN_APPROX_SIMPLE);
+    cv::findContours(will_be_destroyed, Expanded_contour, cv::RETR_EXTERNAL,
+                     cv::CHAIN_APPROX_SIMPLE);
 
     if (first_time) {
       Expanded_contour.clear();
@@ -430,9 +443,9 @@ public:
   }
 
   /////////////////////////
-  void odomCallback(const nav_msgs::Odometry &msg) {
-    robot_position_[0] = msg.pose.pose.position.x;
-    robot_position_[1] = msg.pose.pose.position.y;
+  void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg) {
+    robot_position_[0] = msg->pose.pose.position.x;
+    robot_position_[1] = msg->pose.pose.position.y;
 
     cv::Point temp_Point(100 * robot_position_[0], 100 * robot_position_[1]);
     if (path_.size() > 0)
@@ -451,8 +464,8 @@ public:
   }
 
   /////////////////
-  void metronomeCallback(const ros::TimerEvent &) {
-    //		  ROS_INFO("tic tac");
+  void metronomeCallback() {
+    //		  RCLCPP_INFO(this->get_logger(), "tic tac");
     publish_Image();
     //		  publish_Contour();
   }
@@ -469,14 +482,14 @@ public:
   ////////////////////////////
   void publish_Contour() {
 
-    visualization_msgs::Marker marker;
+    visualization_msgs::msg::Marker marker;
 
     marker.header.frame_id = "map";
-    marker.header.stamp = ros::Time();
+    marker.header.stamp = this->get_clock()->now();
     marker.ns = "my_namespace";
     marker.id = 0;
-    marker.type = visualization_msgs::Marker::POINTS;
-    marker.action = visualization_msgs::Marker::ADD;
+    marker.type = visualization_msgs::msg::Marker::POINTS;
+    marker.action = visualization_msgs::msg::Marker::ADD;
     marker.pose.orientation.x = 0.0;
     marker.pose.orientation.y = 0.0;
     marker.pose.orientation.z = 0.0;
@@ -492,7 +505,7 @@ public:
     for (int i = 0; i < Convex_Marker_.size(); i++) {
       for (int j = 0; j < Convex_Marker_[i].size(); j++) {
 
-        geometry_msgs::Point point;
+        geometry_msgs::msg::Point point;
 
         point.z = 0; //.1*j;
 
@@ -512,7 +525,7 @@ public:
         //<<"Points X:  "<< point.x <<"   Y:  "<< point.y << std::endl;
       }
     }
-    geometry_msgs::Point point;
+    geometry_msgs::msg::Point point;
     markers_pub_.publish(marker);
   }
 
@@ -642,7 +655,7 @@ public:
 
 int main(int argc, char **argv) {
 
-  ros::init(argc, argv, "Dual_Decomposer");
+  rclcpp::init(argc, argv);
 
   std::string mapname = "map";
 
@@ -651,14 +664,9 @@ int main(int argc, char **argv) {
     decomp_th = atof(argv[1]);
   }
 
-  ROS_handler mg(mapname, decomp_th);
-  //	ros::NodeHandle n;
-
-  //	ros::Subscriber sub = n.subscribe("chatter", 1000, chatterCallback);
-  // to create a subscriber, you can do this (as above):
-  //  ros::Subscriber subPC = n.subscribe<sensor_msgs::PointCloud2>
-  //  ("camera/depth/points", 1, callback);
-  ros::spin();
+  auto mg = std::make_shared<ROS_handler>(mapname, decomp_th);
+  rclcpp::spin(mg);
+  rclcpp::shutdown();
 
   return 0;
 }

@@ -1,12 +1,13 @@
 // ROS
-#include "geometry_msgs/Twist.h"
-#include "nav_msgs/GetMap.h"
-#include "ros/ros.h"
+#include "ament_index_cpp/get_package_share_directory.hpp"
+#include "geometry_msgs/msg/twist.hpp"
+#include "rclcpp/rclcpp.hpp"
 
 // openCV
-#include <cv_bridge/cv_bridge.h>
-#include <image_transport/image_transport.h>
+#include <cv_bridge/cv_bridge.hpp>
+#include <image_transport/image_transport.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <sensor_msgs/image_encodings.hpp>
 
 #include <opencv2/highgui/highgui.hpp>
 
@@ -15,6 +16,9 @@
 
 // cpp
 #include <dirent.h>
+#include <chrono>
+#include <functional>
+#include <memory>
 
 struct results {
   double time;
@@ -22,16 +26,14 @@ struct results {
   double recall;
 };
 
-class ROS_handler {
-  ros::NodeHandle n;
+class ROS_handler : public rclcpp::Node {
 
-  image_transport::ImageTransport it_, it2_, it3_;
   image_transport::Subscriber image_sub_, image_sub2_, image_sub3_;
   image_transport::Publisher image_pub_, image_pub2_, image_pub3_;
   cv_bridge::CvImagePtr cv_ptr, cv_ptr2, cv_ptr3;
 
-  ros::Timer timer;
-  ros::Subscriber twist_sub_;
+  rclcpp::TimerBase::SharedPtr timer;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr twist_sub_;
 
   float Decomp_threshold_;
   bool segmentation_ready;
@@ -42,6 +44,11 @@ class ROS_handler {
   std::string gt_ending;
   std::string FuT_ending;
   std::string No_FuT_ending;
+  double image_resolution_;
+  int binary_free_threshold_;
+  int scan_step_pixels_;
+  int scan_radius_pixels_;
+  int min_scan_free_pixels_;
 
   std::vector<std::vector<float>> Precisions;
   std::vector<std::vector<float>> Recalls;
@@ -55,15 +62,31 @@ class ROS_handler {
 
 public:
   ROS_handler(float threshold)
-      : it_(n), it2_(n), it3_(n), Decomp_threshold_(threshold) {
-    timer = n.createTimer(ros::Duration(0.5), &ROS_handler::metronomeCallback,
-                          this);
-    twist_sub_ = n.subscribe("cmd_vel", 1, &ROS_handler::twistCallback, this);
+      : Node("evaluation"),
+        Decomp_threshold_(
+            this->declare_parameter<double>("decomp_threshold", threshold)) {
+    const int publish_period_ms =
+        this->declare_parameter<int>("publish_period_ms", 500);
+    const std::string cmd_vel_topic =
+        this->declare_parameter<std::string>("cmd_vel_topic", "cmd_vel");
+    const std::string ground_truth_topic = this->declare_parameter<std::string>(
+        "ground_truth_segmentation_topic", "/ground_truth_segmentation");
+    const std::string dude_topic = this->declare_parameter<std::string>(
+        "dude_segmentation_topic", "/DuDe_segmentation");
+    const std::string inc_dude_topic = this->declare_parameter<std::string>(
+        "inc_dude_segmentation_topic", "/Inc_DuDe_segmentation");
+
+    timer = this->create_wall_timer(
+        std::chrono::milliseconds(publish_period_ms),
+        std::bind(&ROS_handler::metronomeCallback, this));
+    twist_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+        cmd_vel_topic, 1,
+        std::bind(&ROS_handler::twistCallback, this, std::placeholders::_1));
     segmentation_ready = false;
 
-    image_pub_ = it_.advertise("/ground_truth_segmentation", 1);
-    image_pub2_ = it_.advertise("/DuDe_segmentation", 1);
-    image_pub3_ = it_.advertise("/Inc_DuDe_segmentation", 1);
+    image_pub_ = image_transport::create_publisher(this, ground_truth_topic);
+    image_pub2_ = image_transport::create_publisher(this, dude_topic);
+    image_pub3_ = image_transport::create_publisher(this, inc_dude_topic);
 
     cv_ptr.reset(new cv_bridge::CvImage);
     // cv_ptr->encoding = "mono8";
@@ -77,19 +100,54 @@ public:
     // cv_ptr3->encoding = "mono8";
     cv_ptr3->encoding = sensor_msgs::image_encodings::TYPE_32FC1;
 
-    base_path = "src/Incremental_DuDe_ROS/maps/Room_Segmentation/all_maps";
+    const std::string default_base_path =
+        ament_index_cpp::get_package_share_directory("inc_dude") +
+        "/maps/Room_Segmentation/all_maps";
+    base_path = this->declare_parameter<std::string>("dataset_path",
+                                                     default_base_path);
+    if (base_path.empty()) {
+      base_path = default_base_path;
+      this->set_parameter(rclcpp::Parameter("dataset_path", base_path));
+    }
 
-    gt_ending = "_gt_segmentation.png";
+    gt_ending = this->declare_parameter<std::string>(
+        "ground_truth_suffix", "_gt_segmentation.png");
     /// With    furniture
-    FuT_ending = "_furnitures.png";
+    FuT_ending = this->declare_parameter<std::string>("furniture_suffix",
+                                                      "_furnitures.png");
     /// Without furniture
-    No_FuT_ending = ".png";
+    No_FuT_ending =
+        this->declare_parameter<std::string>("no_furniture_suffix", ".png");
+    image_resolution_ =
+        this->declare_parameter<double>("image_resolution", 0.05);
+    binary_free_threshold_ =
+        this->declare_parameter<int>("binary_free_threshold", 250);
+    scan_step_pixels_ =
+        this->declare_parameter<int>("scan_step_pixels", 50);
+    scan_radius_pixels_ =
+        this->declare_parameter<int>("scan_radius_pixels", 100);
+    min_scan_free_pixels_ =
+        this->declare_parameter<int>("min_scan_free_pixels", 160);
 
-    current_file = 0;
+    current_file = this->declare_parameter<int>("initial_file_index", 0);
     file_list = listFile();
     file_it = file_list.begin();
+    if (current_file < 0) {
+      current_file = 0;
+    }
+    if (!file_list.empty()) {
+      const int offset = current_file % static_cast<int>(file_list.size());
+      for (int i = 0; i < offset; ++i) {
+        ++file_it;
+      }
+    }
 
-    std::cout << "File to process:  " << *file_it << std::endl << std::endl;
+    if (file_list.empty()) {
+      RCLCPP_WARN(this->get_logger(), "No evaluation files found in '%s'",
+                  base_path.c_str());
+    } else {
+      std::cout << "File to process:  " << *file_it << std::endl << std::endl;
+    }
     //			process_all_files();
     //			read_all_files();
   }
@@ -97,15 +155,20 @@ public:
   /////////////////////////////
   // ROS CALLBACKS
   ////////////////////////////////
-  void metronomeCallback(const ros::TimerEvent &) {
-    //		  ROS_INFO("tic tac");
+  void metronomeCallback() {
+    //		  RCLCPP_INFO(this->get_logger(), "tic tac");
     if (segmentation_ready)
       publish_Image();
   }
 
-  void twistCallback(const geometry_msgs::Twist &msg) {
-    //		  ROS_INFO("tic tac");
-    float direction = msg.linear.x;
+  void twistCallback(const geometry_msgs::msg::Twist::SharedPtr msg) {
+    //		  RCLCPP_INFO(this->get_logger(), "tic tac");
+    if (file_list.empty()) {
+      RCLCPP_WARN(this->get_logger(), "No evaluation files are available");
+      return;
+    }
+
+    float direction = msg->linear.x;
 
     if (direction > 0) {
       file_it++;
@@ -181,7 +244,8 @@ public:
     std::map<int, int> DuDe_NoF_map =
         compare_images2(GT_segmentation, DuDe_No_Furniture);
 
-    DuDe_No_Furniture.copyTo(proxy, image_No_Furniture > 250);
+    DuDe_No_Furniture.copyTo(proxy,
+                             image_No_Furniture > binary_free_threshold_);
     DuDe_No_Furniture = proxy.clone();
     //			save_decomposed_image_color(saving_path + "_DuDe" +
     //No_FuT_ending, DuDe_No_Furniture, colormap, DuDe_NoF_map); proxy =
@@ -199,7 +263,7 @@ public:
     std::map<int, int> DuDe_Furn_map =
         compare_images2(GT_segmentation, DuDe_Furniture);
 
-    DuDe_Furniture.copyTo(proxy, image_Furniture > 250);
+    DuDe_Furniture.copyTo(proxy, image_Furniture > binary_free_threshold_);
     DuDe_Furniture = proxy.clone();
     //			save_decomposed_image_color(saving_path + "_DuDe" +
     //FuT_ending, DuDe_Furniture, colormap, DuDe_Furn_map);  proxy = zero_image;
@@ -280,7 +344,8 @@ public:
     std::map<int, int> DuDe_NoF_map =
         compare_images2(GT_segmentation, Inc_No_Furniture);
 
-    Inc_No_Furniture.copyTo(proxy, image_No_Furniture > 250);
+    Inc_No_Furniture.copyTo(proxy,
+                            image_No_Furniture > binary_free_threshold_);
     Inc_No_Furniture = proxy.clone();
     //			save_decomposed_image_color(saving_path + "_Inc" +
     //No_FuT_ending, Inc_No_Furniture, colormap, DuDe_NoF_map); proxy =
@@ -295,7 +360,7 @@ public:
     std::map<int, int> DuDe_Furn_map =
         compare_images2(GT_segmentation, Inc_Furniture);
 
-    Inc_Furniture.copyTo(proxy, image_Furniture > 250);
+    Inc_Furniture.copyTo(proxy, image_Furniture > binary_free_threshold_);
     Inc_Furniture = proxy.clone();
     //			save_decomposed_image_color(saving_path + "_Inc" +
     //FuT_ending, Inc_Furniture, colormap, DuDe_Furn_map);  proxy = zero_image;
@@ -378,7 +443,7 @@ public:
     std::map<int, int> DuDe_Furn_map =
         compare_images(GT_segmentation, DuDe_Furniture);
 
-    DuDe_Furniture.copyTo(proxy, image_Furniture > 250);
+    DuDe_Furniture.copyTo(proxy, image_Furniture > binary_free_threshold_);
     DuDe_Furniture = proxy.clone();
     save_decomposed_image_color(saving_path + "_DuDe" + FuT_ending,
                                 DuDe_Furniture, colormap, DuDe_Furn_map);
@@ -393,7 +458,7 @@ public:
     std::map<int, int> Inc_Furn_map =
         compare_images(GT_segmentation, Inc_Furniture);
 
-    Inc_Furniture.copyTo(proxy, image_Furniture > 250);
+    Inc_Furniture.copyTo(proxy, image_Furniture > binary_free_threshold_);
     Inc_Furniture = proxy.clone();
     save_decomposed_image_color(saving_path + "_Inc" + FuT_ending,
                                 Inc_Furniture, colormap, Inc_Furn_map);
@@ -609,15 +674,14 @@ public:
     Incremental_Decomposer inc_decomp;
     Stable_graph Stable;
     cv::Point2f origin(0, 0);
-    float resolution = 0.05;
-
     cv::Mat pre_decompose = image_in.clone();
-    cv::Mat pre_decompose_BW = pre_decompose > 250;
+    cv::Mat pre_decompose_BW = pre_decompose > binary_free_threshold_;
     //			cv::Mat pre_decompose_BW = clean_image(pre_decompose >
     //250);
 
     Stable = inc_decomp.decompose_image(
-        pre_decompose_BW, Decomp_threshold_ / resolution, origin, resolution);
+        pre_decompose_BW, Decomp_threshold_ / image_resolution_, origin,
+        image_resolution_);
 
     //			cv::Mat Segmentation = Stable.draw_stable_contour();
 
@@ -636,7 +700,7 @@ public:
     cv::Mat src = GroundTruth_BW.clone();
     cv::Mat drawing = cv::Mat::zeros(src.rows, src.cols, CV_8UC1);
 
-    src = src > 250;
+    src = src > binary_free_threshold_;
 
     cv::erode(
         src, src, cv::Mat(), cv::Point(-1, -1), 1, cv::BORDER_CONSTANT,
@@ -645,15 +709,15 @@ public:
     std::vector<std::vector<cv::Point>> contours;
     std::vector<cv::Vec4i> hierarchy;
 
-    cv::findContours(src, contours, hierarchy, CV_RETR_CCOMP,
-                     CV_CHAIN_APPROX_SIMPLE);
+    cv::findContours(src, contours, hierarchy, cv::RETR_CCOMP,
+                     cv::CHAIN_APPROX_SIMPLE);
 
     // iterate through all the top-level contours,
     // draw each connected component with its own random color
     int idx = 0;
     int color = 1;
     for (; idx >= 0; idx = hierarchy[idx][0]) {
-      cv::drawContours(drawing, contours, idx, color, CV_FILLED, 20, hierarchy);
+      cv::drawContours(drawing, contours, idx, color, cv::FILLED, 20, hierarchy);
       color++;
     }
     cv::dilate(drawing, drawing, cv::Mat(), cv::Point(-1, -1), 1,
@@ -667,10 +731,8 @@ public:
     Incremental_Decomposer inc_decomp;
     Stable_graph Stable;
     cv::Point2f origin(0, 0);
-    float resolution = 0.05;
-
     cv::Mat pre_decompose = image_in.clone();
-    cv::Mat pre_decompose_BW = pre_decompose > 250;
+    cv::Mat pre_decompose_BW = pre_decompose > binary_free_threshold_;
     //			cv::Mat pre_decompose_BW = clean_image(pre_decompose >
     //250);
 
@@ -684,21 +746,23 @@ public:
     int valid_images = 0;
 
     while (!stop_criteria) {
-      div_t divresult = div(50 * counter, pre_decompose_BW.size().width);
+      div_t divresult =
+          div(scan_step_pixels_ * counter, pre_decompose_BW.size().width);
       int x = divresult.rem;
-      int y = 50 * divresult.quot;
+      int y = scan_step_pixels_ * divresult.quot;
 
       cv::Point current_position = cv::Point(x, y);
-      cv::circle(current_circle, current_position, 100, 1, -1);
+      cv::circle(current_circle, current_position, scan_radius_pixels_, 1, -1);
 
       pre_decompose_BW.copyTo(current_scan, current_circle); // Aggregated Scan
 
       ///////////////
-      if (countNonZero(current_scan) > 160) {
+      if (countNonZero(current_scan) > min_scan_free_pixels_) {
         double begin_process, end_process, decompose_time;
         begin_process = getTime();
         Stable = inc_decomp.decompose_image(
-            current_scan, Decomp_threshold_ / resolution, origin, resolution);
+            current_scan, Decomp_threshold_ / image_resolution_, origin,
+            image_resolution_);
         end_process = getTime();
         decompose_time = end_process - begin_process;
         valid_images++;
@@ -942,23 +1006,25 @@ public:
       float rows = image_GT.rows;
       float cols = image_GT.cols;
 
-      std::cout << "Reading file  " << *file_iter << " Size  " << rows * 0.05
-                << "*" << cols * 0.05 << std::endl;
+      std::cout << "Reading file  " << *file_iter << " Size  "
+                << rows * image_resolution_ << "*" << cols * image_resolution_
+                << std::endl;
     }
   }
 };
 
 int main(int argc, char **argv) {
 
-  ros::init(argc, argv, "evaluation");
+  rclcpp::init(argc, argv);
 
   float decomp_th = 2.7;
   if (argc == 2) {
     decomp_th = atof(argv[1]);
   }
 
-  ROS_handler mg(decomp_th);
-  ros::spin();
+  auto mg = std::make_shared<ROS_handler>(decomp_th);
+  rclcpp::spin(mg);
+  rclcpp::shutdown();
 
   return 0;
 }

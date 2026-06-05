@@ -60,8 +60,8 @@ Stable_graph Incremental_Decomposer::decompose_image(cv::Mat image_cleaned,
   cv::Mat will_be_destroyed = working_image.clone();
 
   std::vector<std::vector<cv::Point>> Differential_contour;
-  cv::findContours(will_be_destroyed, Differential_contour, CV_RETR_EXTERNAL,
-                   CV_CHAIN_APPROX_SIMPLE);
+  cv::findContours(will_be_destroyed, Differential_contour, cv::RETR_EXTERNAL,
+                   cv::CHAIN_APPROX_SIMPLE);
 
   // multiple contours
   cout << "multiple contours " << endl;
@@ -138,8 +138,8 @@ Stable_graph Incremental_Decomposer::decompose_image(cv::Mat image_cleaned,
 
   will_be_destroyed = expanded_drawing.clone();
   std::vector<std::vector<cv::Point>> Expanded_contour;
-  cv::findContours(will_be_destroyed, Expanded_contour, CV_RETR_EXTERNAL,
-                   CV_CHAIN_APPROX_SIMPLE);
+  cv::findContours(will_be_destroyed, Expanded_contour, cv::RETR_EXTERNAL,
+                   cv::CHAIN_APPROX_SIMPLE);
 
   if (first_time) {
     Expanded_contour.clear();

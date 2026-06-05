@@ -1,12 +1,13 @@
 // ROS
-#include "geometry_msgs/Twist.h"
-#include "nav_msgs/GetMap.h"
-#include "ros/ros.h"
+#include "ament_index_cpp/get_package_share_directory.hpp"
+#include "geometry_msgs/msg/twist.hpp"
+#include "rclcpp/rclcpp.hpp"
 
 // openCV
-#include <cv_bridge/cv_bridge.h>
-#include <image_transport/image_transport.h>
+#include <cv_bridge/cv_bridge.hpp>
+#include <image_transport/image_transport.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <sensor_msgs/image_encodings.hpp>
 
 #include <opencv2/highgui/highgui.hpp>
 
@@ -15,17 +16,18 @@
 
 // cpp
 #include <dirent.h>
+#include <chrono>
+#include <functional>
+#include <memory>
 
-class ROS_handler {
-  ros::NodeHandle n;
+class ROS_handler : public rclcpp::Node {
 
-  image_transport::ImageTransport it_, it2_, it3_;
   image_transport::Subscriber image_sub_, image_sub2_, image_sub3_;
   image_transport::Publisher image_pub_, image_pub2_, image_pub3_;
   cv_bridge::CvImagePtr cv_ptr, cv_ptr2, cv_ptr3;
 
-  ros::Timer timer;
-  ros::Subscriber twist_sub_;
+  rclcpp::TimerBase::SharedPtr timer;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr twist_sub_;
 
   float Decomp_threshold_;
   bool segmentation_ready;
@@ -45,15 +47,23 @@ class ROS_handler {
 
 public:
   ROS_handler(float threshold)
-      : it_(n), it2_(n), it3_(n), Decomp_threshold_(threshold) {
-    timer = n.createTimer(ros::Duration(0.5), &ROS_handler::metronomeCallback,
-                          this);
-    twist_sub_ = n.subscribe("cmd_vel", 1, &ROS_handler::twistCallback1, this);
+      : Node("evaluation2"),
+        Decomp_threshold_(
+            this->declare_parameter<double>("decomp_threshold", threshold)) {
+    timer = this->create_wall_timer(
+        std::chrono::milliseconds(500),
+        std::bind(&ROS_handler::metronomeCallback, this));
+    twist_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+        "cmd_vel", 1,
+        std::bind(&ROS_handler::twistCallback1, this, std::placeholders::_1));
     segmentation_ready = false;
 
-    image_pub_ = it_.advertise("/ground_truth_segmentation", 1);
-    image_pub2_ = it_.advertise("/DuDe_segmentation", 1);
-    image_pub3_ = it_.advertise("/Inc_DuDe_segmentation", 1);
+    image_pub_ =
+        image_transport::create_publisher(this, "/ground_truth_segmentation");
+    image_pub2_ =
+        image_transport::create_publisher(this, "/DuDe_segmentation");
+    image_pub3_ =
+        image_transport::create_publisher(this, "/Inc_DuDe_segmentation");
 
     cv_ptr.reset(new cv_bridge::CvImage);
     // cv_ptr->encoding = "mono8";
@@ -67,7 +77,8 @@ public:
     // cv_ptr3->encoding = "mono8";
     cv_ptr3->encoding = sensor_msgs::image_encodings::TYPE_32FC1;
 
-    base_path = "src/Incremental_DuDe_ROS/maps/Room_Segmentation/all_maps";
+    base_path = ament_index_cpp::get_package_share_directory("inc_dude") +
+                "/maps/Room_Segmentation/all_maps";
     gt_ending = "_gt_segmentation.png";
     /// With    furniture
     FuT_ending = "_furnitures.png";
@@ -82,14 +93,14 @@ public:
   /////////////////////////////
   // ROS CALLBACKS
   ////////////////////////////////
-  void metronomeCallback(const ros::TimerEvent &) {
-    //		  ROS_INFO("tic tac");
+  void metronomeCallback() {
+    //		  RCLCPP_INFO(this->get_logger(), "tic tac");
     if (segmentation_ready)
       publish_Image();
   }
 
-  void twistCallback(const geometry_msgs::Twist &msg) {
-    //		  ROS_INFO("tic tac");
+  void twistCallback(const geometry_msgs::msg::Twist::SharedPtr msg) {
+    //		  RCLCPP_INFO(this->get_logger(), "tic tac");
     std::vector<std::string> files_to_read = listFile();
 
     //			std::cout << "Files listed  " << std::endl;
@@ -149,9 +160,9 @@ public:
     }
   }
 
-  void twistCallback1(const geometry_msgs::Twist &msg) {
-    //		  ROS_INFO("tic tac");
-    float direction = msg.linear.x;
+  void twistCallback1(const geometry_msgs::msg::Twist::SharedPtr msg) {
+    //		  RCLCPP_INFO(this->get_logger(), "tic tac");
+    float direction = msg->linear.x;
 
     if (direction > 0) {
       current_file++;
@@ -193,9 +204,9 @@ public:
     }
   }
 
-  void twistCallback2(const geometry_msgs::Twist &msg) {
+  void twistCallback2(const geometry_msgs::msg::Twist::SharedPtr msg) {
     //			cv::Mat image_GT_BW     =
-    //cv::imread("src/Incremental_DuDe_ROS/maps/Room_Segmentation/nested_maps/lab_intel_gt_segmentation.png",0);
+    //cv::imread(base_path + "/nested_maps/lab_intel_gt_segmentation.png",0);
     //// Read the file 			cv::Mat image_GT_tagged =
     //segment_Ground_Truth(image_GT_BW);
 
@@ -229,7 +240,7 @@ public:
     //*/
   }
 
-  void twistCallback3(const geometry_msgs::Twist &msg) {
+  void twistCallback3(const geometry_msgs::msg::Twist::SharedPtr msg) {
     std::string full_path = base_path + "/" + "lab_intel" + FuT_ending;
     cv::Mat image_GT = cv::imread(full_path, 0); // Read the file
 
@@ -501,8 +512,8 @@ public:
     std::vector<std::vector<cv::Point>> contours;
     std::vector<cv::Vec4i> hierarchy;
 
-    cv::findContours(src, contours, hierarchy, CV_RETR_CCOMP,
-                     CV_CHAIN_APPROX_SIMPLE);
+    cv::findContours(src, contours, hierarchy, cv::RETR_CCOMP,
+                     cv::CHAIN_APPROX_SIMPLE);
 
     // iterate through all the top-level contours,
     // draw each connected component with its own random color
@@ -510,8 +521,8 @@ public:
     int color = 1;
     for (; idx >= 0; idx = hierarchy[idx][0]) {
       //				cv::drawContours( drawing, contours,
-      //idx, (rand()%244 + 10) , CV_FILLED, 20, hierarchy );
-      cv::drawContours(drawing, contours, idx, color, CV_FILLED, 20, hierarchy);
+      //idx, (rand()%244 + 10) , cv::FILLED, 20, hierarchy );
+      cv::drawContours(drawing, contours, idx, color, cv::FILLED, 20, hierarchy);
       color++;
     }
     cv::dilate(drawing, drawing, cv::Mat(), cv::Point(-1, -1), 1,
@@ -868,15 +879,16 @@ public:
 
 int main(int argc, char **argv) {
 
-  ros::init(argc, argv, "evaluation");
+  rclcpp::init(argc, argv);
 
   float decomp_th = 2.7;
   if (argc == 2) {
     decomp_th = atof(argv[1]);
   }
 
-  ROS_handler mg(decomp_th);
-  ros::spin();
+  auto mg = std::make_shared<ROS_handler>(decomp_th);
+  rclcpp::spin(mg);
+  rclcpp::shutdown();
 
   return 0;
 }

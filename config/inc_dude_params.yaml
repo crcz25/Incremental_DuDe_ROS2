@@ -1,0 +1,37 @@
+incremental_decomposer:
+  ros__parameters:
+    decomp_threshold: 3.0                 # Concavity threshold in meters; converted to pixels with each incoming OccupancyGrid resolution before DuDe decomposition.
+    map_topic: "/map"                     # Input nav_msgs/OccupancyGrid topic subscribed by the incremental decomposer.
+    save_trigger_topic: "chatter"         # std_msgs/String topic used to trigger saving the current batch and incremental segmentation images.
+    tagged_image_topic: "/tagged_image"   # Output image topic where the current tagged decomposition is published.
+    publish_period_ms: 500                # Period in milliseconds for republishing the latest tagged image.
+    maps_path: ""                         # Base maps directory; empty means use the package share directory's maps folder.
+    segmentation_output_directory: ""     # Directory for saved segmentation images; empty means maps_path/Topological_Segmentation.
+    valid_space_threshold: 101            # OccupancyGrid cells below this value are considered known/valid for bounding-box extraction.
+    free_space_threshold: 10              # OccupancyGrid cells below this value are treated as free space during image cleanup.
+    occupied_min_threshold: 90            # Lower OccupancyGrid threshold for obstacle extraction during image cleanup.
+    occupied_max_threshold: 100           # Upper OccupancyGrid threshold for obstacle extraction during image cleanup.
+    obstacle_filter_size: 2               # Box-filter kernel size in pixels used to smooth obstacle pixels before dilation.
+    free_space_filter_size: 10            # Box-filter kernel size in pixels used to smooth free-space pixels before decomposition.
+    obstacle_dilation_iterations: 4       # Number of OpenCV dilation iterations applied to obstacle pixels.
+    offline_image_resolution: 0.05        # Meters per pixel used only by the save-trigger batch comparison path.
+    offline_free_threshold: 250           # Pixel threshold used by the save-trigger batch comparison path to create a free-space mask.
+
+evaluation:
+  ros__parameters:
+    decomp_threshold: 2.7                         # Concavity threshold in meters for DuDe and incremental evaluation decompositions.
+    cmd_vel_topic: "cmd_vel"                      # geometry_msgs/Twist topic used to cycle files with positive linear.x and process with non-positive linear.x.
+    ground_truth_segmentation_topic: "/ground_truth_segmentation" # Output image topic for the ground-truth segmentation image.
+    dude_segmentation_topic: "/DuDe_segmentation" # Output image topic for the non-incremental DuDe segmentation image.
+    inc_dude_segmentation_topic: "/Inc_DuDe_segmentation" # Output image topic for the incremental DuDe segmentation image.
+    publish_period_ms: 500                        # Period in milliseconds for republishing evaluation images once a segmentation is ready.
+    dataset_path: ""                              # Directory containing evaluation images; empty means package share maps/Room_Segmentation/all_maps.
+    ground_truth_suffix: "_gt_segmentation.png"   # Filename suffix used to find ground-truth segmentation images in dataset_path.
+    furniture_suffix: "_furnitures.png"           # Filename suffix used to find furniture-map images in dataset_path.
+    no_furniture_suffix: ".png"                   # Filename suffix used to find no-furniture map images in dataset_path.
+    image_resolution: 0.05                        # Meters per pixel for evaluation images; converts decomp_threshold from meters to pixels.
+    binary_free_threshold: 250                    # Pixel threshold used to convert grayscale evaluation images into free-space masks.
+    scan_step_pixels: 50                          # Pixel stride for the synthetic incremental scan path in evaluation.
+    scan_radius_pixels: 100                       # Radius in pixels of each synthetic scan circle in evaluation.
+    min_scan_free_pixels: 160                     # Minimum free pixels required before a synthetic scan is decomposed.
+    initial_file_index: 0                         # Initial sorted dataset file index selected when the evaluation node starts.

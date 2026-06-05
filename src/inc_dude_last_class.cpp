@@ -1,27 +1,32 @@
 // ROS
-#include "nav_msgs/GetMap.h"
-#include "ros/ros.h"
+#include "ament_index_cpp/get_package_share_directory.hpp"
+#include "nav_msgs/msg/occupancy_grid.hpp"
+#include "rclcpp/rclcpp.hpp"
 
 // openCV
-#include <cv_bridge/cv_bridge.h>
-#include <image_transport/image_transport.h>
+#include <cv_bridge/cv_bridge.hpp>
+#include <image_transport/image_transport.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <sensor_msgs/image_encodings.hpp>
 
 // DuDe
 #include "inc_decomp.hpp"
 
-class ROS_handler {
-  ros::NodeHandle n;
+#include <chrono>
+#include <functional>
+#include <memory>
 
-  image_transport::ImageTransport it_;
+class ROS_handler : public rclcpp::Node {
+
   image_transport::Subscriber image_sub_;
   image_transport::Publisher image_pub_;
   cv_bridge::CvImagePtr cv_ptr;
 
   std::string mapname_;
-  ros::Subscriber map_sub_;
-  ros::Timer timer;
+  std::string maps_path_;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+  rclcpp::TimerBase::SharedPtr timer;
 
   float Decomp_threshold_;
   Incremental_Decomposer inc_decomp;
@@ -32,14 +37,20 @@ class ROS_handler {
 
 public:
   ROS_handler(const std::string &mapname, float threshold)
-      : mapname_(mapname), it_(n), Decomp_threshold_(threshold) {
-    ROS_INFO("Waiting for the map");
-    map_sub_ = n.subscribe("map", 2, &ROS_handler::mapCallback,
-                           this); // mapname_ to include different name
-    timer = n.createTimer(ros::Duration(0.5), &ROS_handler::metronomeCallback,
-                          this);
+      : Node("incremental_decomposer_last_class"), mapname_(mapname),
+        Decomp_threshold_(
+            this->declare_parameter<double>("decomp_threshold", threshold)) {
+    maps_path_ =
+        ament_index_cpp::get_package_share_directory("inc_dude") + "/maps";
+    RCLCPP_INFO(this->get_logger(), "Waiting for the map");
+    map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
+        mapname_, rclcpp::QoS(2).transient_local().reliable(),
+        std::bind(&ROS_handler::mapCallback, this, std::placeholders::_1));
+    timer = this->create_wall_timer(
+        std::chrono::milliseconds(500),
+        std::bind(&ROS_handler::metronomeCallback, this));
 
-    image_pub_ = it_.advertise("/tagged_image", 1);
+    image_pub_ = image_transport::create_publisher(this, "/tagged_image");
     cv_ptr.reset(new cv_bridge::CvImage);
     cv_ptr->encoding = "mono8";
   }
@@ -48,13 +59,13 @@ public:
   // ROS CALLBACKS
   ////////////////////////////////
 
-  void mapCallback(const nav_msgs::OccupancyGridConstPtr &map) {
+  void mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr map) {
     double begin_process, end_process, begin_whole, occupancy_time,
         decompose_time, drawPublish_time, whole_time;
     begin_whole = begin_process = getTime();
 
-    ROS_INFO("Received a %d X %d map @ %.3f m/pix", map->info.width,
-             map->info.height, map->info.resolution);
+    RCLCPP_INFO(this->get_logger(), "Received a %u X %u map @ %.3f m/pix",
+                map->info.width, map->info.height, map->info.resolution);
 
     ///////////////////////Occupancy to clean image
     cv::Mat grad, img(map->info.height, map->info.width, CV_8U);
@@ -173,8 +184,8 @@ public:
   }
 
   /////////////////
-  void metronomeCallback(const ros::TimerEvent &) {
-    //		  ROS_INFO("tic tac");
+  void metronomeCallback() {
+    //		  RCLCPP_INFO(this->get_logger(), "tic tac");
     publish_Image();
   }
 
@@ -192,8 +203,8 @@ public:
 
     cv::Mat valid_image = Occ_Image < 101;
     std::vector<std::vector<cv::Point>> test_contour;
-    cv::findContours(valid_image, test_contour, CV_RETR_EXTERNAL,
-                     CV_CHAIN_APPROX_SIMPLE);
+    cv::findContours(valid_image, test_contour, cv::RETR_EXTERNAL,
+                     cv::CHAIN_APPROX_SIMPLE);
 
     cv::Rect first_rect = cv::boundingRect(test_contour[0]);
     for (int i = 1; i < test_contour.size(); i++) {
@@ -274,8 +285,8 @@ public:
   cv::Rect find_image_bounding_Rect(cv::Mat Occ_Image) {
     cv::Mat valid_image = Occ_Image < 101;
     std::vector<std::vector<cv::Point>> test_contour;
-    cv::findContours(valid_image, test_contour, CV_RETR_EXTERNAL,
-                     CV_CHAIN_APPROX_SIMPLE);
+    cv::findContours(valid_image, test_contour, cv::RETR_EXTERNAL,
+                     cv::CHAIN_APPROX_SIMPLE);
 
     cv::Rect first_rect = cv::boundingRect(test_contour[0]);
     for (int i = 1; i < test_contour.size(); i++) {
@@ -287,8 +298,7 @@ public:
   /////////////////
   void save_images_color(cv::Mat DuDe_segmentation) {
     std::string full_path_decomposed =
-        "src/Incremental_DuDe_ROS/maps/Topological_Segmentation/"
-        "map_decomposed.png";
+        maps_path_ + "/Topological_Segmentation/map_decomposed.png";
     double min, max;
 
     std::vector<cv::Vec3b> color_vector;
@@ -315,7 +325,7 @@ public:
 
 int main(int argc, char **argv) {
 
-  ros::init(argc, argv, "incremental_decomposer");
+  rclcpp::init(argc, argv);
 
   std::string mapname = "map";
 
@@ -324,8 +334,9 @@ int main(int argc, char **argv) {
     decomp_th = atof(argv[1]);
   }
 
-  ROS_handler mg(mapname, decomp_th);
-  ros::spin();
+  auto mg = std::make_shared<ROS_handler>(mapname, decomp_th);
+  rclcpp::spin(mg);
+  rclcpp::shutdown();
 
   return 0;
 }

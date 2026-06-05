@@ -70,8 +70,8 @@ Blur........ "; Image_in = Median_Image & ~black_image; cout << "And........ ";
   double start_finding = getTime();
   std::vector<std::vector<cv::Point>> Explored_contour;
   std::vector<cv::Vec4i> hierarchy; //[Next, Previous, First_Child, Parent]
-  cv::findContours(Occ_Image, Explored_contour, hierarchy, CV_RETR_TREE,
-                   CV_CHAIN_APPROX_SIMPLE);
+  cv::findContours(Occ_Image, Explored_contour, hierarchy, cv::RETR_TREE,
+                   cv::CHAIN_APPROX_SIMPLE);
 
   int current_index = 0;
   cv::Rect resize_rect = boundingRect(Explored_contour[0]);
