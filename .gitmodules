@@ -1,3 +1,9 @@
 [submodule "Third_Party/freeglut"]
 	path = Third_Party/freeglut
 	url = https://github.com/freeglut/freeglut
+[submodule "Third_Party/cgal"]
+	path = Third_Party/cgal
+	url = https://github.com/cgal/cgal
+[submodule "Third_Party/mpfr"]
+	path = Third_Party/mpfr
+	url = https://gitlab.inria.fr/mpfr/mpfr
