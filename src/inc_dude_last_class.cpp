@@ -4,7 +4,11 @@
 #include "rclcpp/rclcpp.hpp"
 
 // openCV
-#include <cv_bridge/cv_bridge.hpp>
+#if __has_include(<cv_bridge/cv_bridge.hpp>)
+#include <cv_bridge/cv_bridge.hpp>  // Iron and later
+#else
+#include <cv_bridge/cv_bridge.h>  // Humble
+#endif
 #include <image_transport/image_transport.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
