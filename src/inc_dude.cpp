@@ -18,9 +18,16 @@
 // DuDe
 #include "inc_decomp.hpp"
 
+// Region tracking
+#include "inc_dude/decomposition_adapter.hpp"
+#include "inc_dude/region_msg_conversion.hpp"
+#include "inc_dude/region_tracker.hpp"
+
 #include <chrono>
 #include <functional>
+#include <cmath>
 #include <memory>
+#include <stdexcept>
 
 class ROS_handler : public rclcpp::Node {
 
@@ -53,6 +60,19 @@ class ROS_handler : public rclcpp::Node {
   int free_space_filter_size_;
   int obstacle_dilation_iterations_;
   int offline_free_threshold_;
+
+  // Region tracking
+  inc_dude::AdapterConfig adapter_config_;
+  std::unique_ptr<inc_dude::RegionTracker> tracker_;
+  bool publish_missing_regions_;
+  bool debug_region_tracking_;
+  rclcpp::Publisher<inc_dude::msg::Region2DArray>::SharedPtr regions_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
+      region_markers_pub_;
+  // Grid placement the incremental decomposer's pixel-space state refers to.
+  bool have_grid_{false};
+  std::string grid_frame_id_;
+  inc_dude::GridGeometry grid_;
 
 public:
   ROS_handler(const std::string &mapname, float threshold)
@@ -102,6 +122,8 @@ public:
     offline_free_threshold_ =
         this->declare_parameter<int>("offline_free_threshold", 250);
 
+    declare_region_tracking_parameters();
+
     RCLCPP_INFO(this->get_logger(), "Waiting for the map");
     map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
         map_topic, rclcpp::QoS(2).transient_local().reliable(),
@@ -114,6 +136,19 @@ public:
         std::bind(&ROS_handler::metronomeCallback, this));
 
     image_pub_ = image_transport::create_publisher(this, tagged_image_topic);
+
+    const std::string regions_topic = this->declare_parameter<std::string>(
+        "regions_topic", "/inc_dude/regions");
+    // Latched so late subscribers (e.g. the 3DSG layer) get the last state.
+    regions_pub_ = this->create_publisher<inc_dude::msg::Region2DArray>(
+        regions_topic, rclcpp::QoS(1).transient_local().reliable());
+    const std::string markers_topic = this->declare_parameter<std::string>(
+        "region_markers_topic", "/inc_dude/region_markers");
+    if (debug_region_tracking_) {
+      region_markers_pub_ =
+          this->create_publisher<visualization_msgs::msg::MarkerArray>(
+              markers_topic, rclcpp::QoS(1).transient_local().reliable());
+    }
     cv_ptr.reset(new cv_bridge::CvImage);
     cv_ptr->encoding = "mono8";
   }
@@ -130,6 +165,17 @@ public:
     RCLCPP_INFO(this->get_logger(), "Received a %u X %u map @ %.3f m/pix",
                 map->info.width, map->info.height, map->info.resolution);
 
+    inc_dude::GridGeometry grid;
+    std::string invalid_reason;
+    if (!inc_dude::gridGeometryFromMap(*map, grid, invalid_reason)) {
+      RCLCPP_WARN(this->get_logger(), "Ignoring invalid map: %s",
+                  invalid_reason.c_str());
+      return;
+    }
+    if (!check_grid_consistency(map->header.frame_id, grid)) {
+      return;
+    }
+
     ///////////////////////Occupancy to clean image
     cv::Mat grad, img(map->info.height, map->info.width, CV_8U);
     img.data = (unsigned char *)(&(map->data[0]));
@@ -141,6 +187,11 @@ public:
         cv::Point2f(map->info.origin.position.x, map->info.origin.position.y);
 
     cv::Rect first_rect = find_image_bounding_Rect(received_image);
+    if (first_rect.empty()) {
+      RCLCPP_WARN(this->get_logger(),
+                  "Map has no known cells yet, skipping decomposition");
+      return;
+    }
     float rect_area = (first_rect.height) * (first_rect.width);
     float img_area = (received_image.rows) * (received_image.cols);
     cout << "Area Ratio " << (rect_area / img_area) * 100 << "% " << endl;
@@ -172,13 +223,25 @@ public:
     ///////////////////////// Decompose Image
     begin_process = getTime();
 
+    bool decomposition_ok = false;
     try {
       Stable = inc_decomp.decompose_image(image_cleaned, pixel_Tau, origin,
                                           map->info.resolution);
       //				Stable =
       //inc_decomp_batch.decompose_image(image_cleaned, pixel_Tau, origin,
       //map->info.resolution); //Uncoment to batch
+      decomposition_ok = true;
+    } catch (const std::exception &e) {
+      RCLCPP_ERROR(this->get_logger(), "Decomposition failed: %s", e.what());
     } catch (...) {
+      RCLCPP_ERROR(this->get_logger(), "Decomposition failed");
+    }
+
+    if (decomposition_ok) {
+      track_and_publish_regions(map->header, grid);
+    } else if (debug_region_tracking_) {
+      RCLCPP_INFO(this->get_logger(),
+                  "[region tracking] update skipped: decomposition failed");
     }
 
     end_process = getTime();
@@ -422,12 +485,150 @@ public:
     std::vector<std::vector<cv::Point>> test_contour;
     cv::findContours(valid_image, test_contour, cv::RETR_EXTERNAL,
                      cv::CHAIN_APPROX_SIMPLE);
+    if (test_contour.empty()) {
+      return cv::Rect();
+    }
 
     cv::Rect first_rect = cv::boundingRect(test_contour[0]);
     for (int i = 1; i < test_contour.size(); i++) {
       first_rect |= cv::boundingRect(test_contour[i]);
     }
     return first_rect;
+  }
+
+  /////////////////////////
+  //// REGION TRACKING
+  /////////////////////////
+
+  void declare_region_tracking_parameters() {
+    publish_missing_regions_ =
+        this->declare_parameter<bool>("publish_missing_regions", false);
+    debug_region_tracking_ =
+        this->declare_parameter<bool>("debug_region_tracking", false);
+    adapter_config_.adjacency_distance_cells = this->declare_parameter<double>(
+        "region_tracking.adjacency_distance_cells",
+        adapter_config_.adjacency_distance_cells);
+    adapter_config_.adjacency_min_contact_m = this->declare_parameter<double>(
+        "region_tracking.adjacency_min_contact_m",
+        adapter_config_.adjacency_min_contact_m);
+
+    inc_dude::TrackerConfig c;
+    const std::string p = "region_tracking.";
+    c.min_region_area_m2 =
+        this->declare_parameter<double>(p + "min_region_area_m2", c.min_region_area_m2);
+    c.overlap_sample_step_m = this->declare_parameter<double>(
+        p + "overlap_sample_step_m", c.overlap_sample_step_m);
+    c.gate_min_containment = this->declare_parameter<double>(
+        p + "gate_min_containment", c.gate_min_containment);
+    c.gate_centroid_distance_m = this->declare_parameter<double>(
+        p + "gate_centroid_distance_m", c.gate_centroid_distance_m);
+    c.gate_min_area_ratio = this->declare_parameter<double>(
+        p + "gate_min_area_ratio", c.gate_min_area_ratio);
+    c.weight_iou = this->declare_parameter<double>(p + "weight_iou", c.weight_iou);
+    c.weight_containment = this->declare_parameter<double>(
+        p + "weight_containment", c.weight_containment);
+    c.weight_centroid =
+        this->declare_parameter<double>(p + "weight_centroid", c.weight_centroid);
+    c.weight_area =
+        this->declare_parameter<double>(p + "weight_area", c.weight_area);
+    c.centroid_distance_scale_m = this->declare_parameter<double>(
+        p + "centroid_distance_scale_m", c.centroid_distance_scale_m);
+    c.split_merge_min_fraction = this->declare_parameter<double>(
+        p + "split_merge_min_fraction", c.split_merge_min_fraction);
+    c.retire_min_coverage = this->declare_parameter<double>(
+        p + "retire_min_coverage", c.retire_min_coverage);
+    c.max_missed_updates = static_cast<int>(this->declare_parameter<int>(
+        p + "max_missed_updates", c.max_missed_updates));
+    c.max_area_loss_fraction = this->declare_parameter<double>(
+        p + "max_area_loss_fraction", c.max_area_loss_fraction);
+    c.max_region_overlap_fraction = this->declare_parameter<double>(
+        p + "max_region_overlap_fraction", c.max_region_overlap_fraction);
+    c.max_consecutive_rejections = static_cast<int>(this->declare_parameter<int>(
+        p + "max_consecutive_rejections", c.max_consecutive_rejections));
+
+    const std::string config_error = inc_dude::validateConfig(c);
+    if (!config_error.empty()) {
+      throw std::invalid_argument("Invalid region_tracking parameters: " +
+                                  config_error);
+    }
+    if (!(adapter_config_.adjacency_distance_cells >= 0.0) ||
+        !(adapter_config_.adjacency_min_contact_m >= 0.0)) {
+      throw std::invalid_argument(
+          "Invalid region_tracking adjacency parameters: must be >= 0");
+    }
+    tracker_ = std::make_unique<inc_dude::RegionTracker>(c);
+  }
+
+  // The incremental decomposer keeps its stable regions in pixel coordinates
+  // and only compensates origin translations. Maps in another frame are
+  // rejected; a resolution or rotation change restarts the decomposer (the
+  // tracker keeps the canonical ids, matching in metric map coordinates).
+  bool check_grid_consistency(const std::string &frame_id,
+                              const inc_dude::GridGeometry &grid) {
+    if (!have_grid_) {
+      have_grid_ = true;
+      grid_frame_id_ = frame_id;
+      grid_ = grid;
+      return true;
+    }
+    if (frame_id != grid_frame_id_) {
+      RCLCPP_WARN(this->get_logger(),
+                  "Ignoring map in frame '%s', expected '%s'", frame_id.c_str(),
+                  grid_frame_id_.c_str());
+      return false;
+    }
+    const bool resolution_changed =
+        std::abs(grid.resolution - grid_.resolution) > 1e-6;
+    const bool yaw_changed =
+        std::abs(std::remainder(grid.origin_yaw - grid_.origin_yaw,
+                                2.0 * M_PI)) > 1e-6;
+    if (resolution_changed || yaw_changed) {
+      RCLCPP_WARN(this->get_logger(),
+                  "Map %s changed; restarting the incremental decomposition",
+                  resolution_changed ? "resolution" : "orientation");
+      inc_decomp = Incremental_Decomposer();
+      Stable = Stable_graph();
+    }
+    grid_ = grid;
+    return true;
+  }
+
+  void track_and_publish_regions(const std_msgs::msg::Header &header,
+                                 const inc_dude::GridGeometry &grid) {
+    inc_dude::RegionUpdate update;
+    update.frame_id = header.frame_id;
+    update.stamp_ns = rclcpp::Time(header.stamp).nanoseconds();
+    update.resolution = grid.resolution;
+    update.regions = inc_dude::regionsFromContours(Stable.Region_contour, grid,
+                                                   adapter_config_);
+
+    const inc_dude::TrackerUpdateResult result = tracker_->update(update);
+    if (!result.accepted) {
+      RCLCPP_WARN(this->get_logger(),
+                  "Region update rejected (%zu raw regions), keeping last "
+                  "valid tracking state: %s",
+                  Stable.Region_contour.size(),
+                  result.rejection_reason.c_str());
+      return;
+    }
+    if (result.forced) {
+      RCLCPP_WARN(this->get_logger(),
+                  "Region update accepted after %d consecutive rejections: %s",
+                  tracker_->config().max_consecutive_rejections,
+                  result.rejection_reason.c_str());
+    }
+    if (debug_region_tracking_) {
+      RCLCPP_INFO(this->get_logger(), "[region tracking] %s",
+                  inc_dude::formatUpdateReport(result, true).c_str());
+    }
+
+    const auto regions_msg = inc_dude::toMsg(
+        tracker_->publishableTracks(publish_missing_regions_), result.events,
+        header, result.update_index);
+    regions_pub_->publish(regions_msg);
+    if (region_markers_pub_) {
+      region_markers_pub_->publish(inc_dude::toMarkers(regions_msg));
+    }
   }
 
   /////////////////

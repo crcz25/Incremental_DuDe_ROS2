@@ -16,9 +16,47 @@ find_package(visualization_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# The interface target must be ${PROJECT_NAME}: typesupport libraries are
+# looked up at runtime by package name. The node target is therefore called
+# inc_dude_node and installed under the executable name inc_dude.
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/Region2D.msg"
+  "msg/RegionEvent.msg"
+  "msg/Region2DArray.msg"
+  DEPENDENCIES std_msgs geometry_msgs
+)
+rosidl_get_typesupport_target(inc_dude_cpp_typesupport
+  ${PROJECT_NAME} "rosidl_typesupport_cpp")
+
+# Region tracking core: ROS-independent, unit tested directly.
+add_library(inc_dude_tracking STATIC
+  src/tracking/region_geometry.cpp
+  src/tracking/decomposition_adapter.cpp
+  src/tracking/hungarian.cpp
+  src/tracking/region_tracker.cpp
+)
+target_include_directories(inc_dude_tracking PUBLIC
+  ${PROJECT_SOURCE_DIR}/include
+  ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(inc_dude_tracking PUBLIC opencv_core)
+set_target_properties(inc_dude_tracking PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# ROS message conversion for tracked regions.
+add_library(inc_dude_region_msgs STATIC
+  src/tracking/region_msg_conversion.cpp
+)
+target_link_libraries(inc_dude_region_msgs PUBLIC
+  inc_dude_tracking
+  "${inc_dude_cpp_typesupport}"
+)
+ament_target_dependencies(inc_dude_region_msgs PUBLIC
+  std_msgs geometry_msgs nav_msgs visualization_msgs)
 
 set(FREEGLUT_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(FREEGLUT_BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
@@ -126,11 +164,13 @@ function(add_inc_dude_executable target source)
   )
 endfunction()
 
-add_inc_dude_executable(inc_dude src/inc_dude.cpp)
+add_inc_dude_executable(inc_dude_node src/inc_dude.cpp)
+set_target_properties(inc_dude_node PROPERTIES OUTPUT_NAME inc_dude)
+target_link_libraries(inc_dude_node inc_dude_region_msgs)
 add_inc_dude_executable(evaluation src/evaluation.cpp)
 
 install(TARGETS
-  inc_dude
+  inc_dude_node
   evaluation
   DESTINATION lib/${PROJECT_NAME}
 )
@@ -148,4 +188,15 @@ install(DIRECTORY config
   DESTINATION share/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_region_tracking
+    test/test_region_geometry.cpp
+    test/test_decomposition_adapter.cpp
+    test/test_region_tracker.cpp
+  )
+  target_link_libraries(test_region_tracking inc_dude_tracking)
+endif()
+
+ament_export_dependencies(rosidl_default_runtime)
 ament_package()

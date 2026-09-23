@@ -106,6 +106,41 @@ The same node can be launched with:
 ros2 launch inc_dude inc_dude.launch.py
 ```
 
+#### Tracked regions
+
+`inc_dude` also publishes the decomposition as tracked regions with persistent
+canonical IDs on `regions_topic` (default `/inc_dude/regions`,
+`inc_dude/msg/Region2DArray`, transient-local). Each accepted decomposition
+update is converted into frame-local `Region2D`s (map-frame polygon, centroid,
+area, boundary-contact adjacency) and matched against the existing tracks:
+
+- Candidate pairs are gated by overlap containment (or, failing that, close
+  centroids with similar area) and scored from IoU, containment, centroid
+  distance and area ratio. A global one-to-one assignment (Hungarian) is
+  solved on the scores.
+- Unmatched regions get new IDs. If they lie mostly inside an existing track
+  they are reported as a split of it (`split_from`, `SPLIT` event).
+- Unmatched tracks whose space is now covered by a matched region are retired
+  as merged into it (`merged_ids`, `MERGED` event). Uncovered tracks become
+  `MISSING` and are removed after `max_missed_updates`.
+- IDs come from a monotonic counter and are never reused.
+- Invalid updates (wrong frame, non-finite geometry, broken adjacency, empty)
+  are rejected. Implausible updates (large area loss, overlapping regions) are
+  rejected up to `max_consecutive_rejections` times. A rejected update never
+  modifies the tracking state.
+
+All adjacency IDs are canonical. Parameters live under `region_tracking.*` in
+`config/inc_dude_params.yaml`. Set `debug_region_tracking:=true` to
+log raw->canonical IDs, match scores, events and rejections, and to publish
+RViz markers on `region_markers_topic`.
+
+The tracking core (`src/tracking`, `include/inc_dude`) does not depend on ROS.
+Its unit tests run with:
+
+```bash
+colcon test --packages-select inc_dude && colcon test-result --verbose
+```
+
 #### `evaluation`
 
 Processes the bundled dataset and publishes images on `/ground_truth_segmentation`, `/DuDe_segmentation`, and `/inc_dude_segmentation`. The `/cmd_vel` topic is used to cycle and process images.

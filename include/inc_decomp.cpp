@@ -75,6 +75,11 @@ Stable_graph Incremental_Decomposer::decompose_image(cv::Mat image_cleaned,
       big_contours_vector.push_back(Differential_contour[i]);
     }
   }
+  // Nothing large enough to decompose yet (e.g. first maps are almost all
+  // unknown): keep the previous result instead of indexing an empty vector.
+  if (first_time && big_contours_vector.empty())
+    return Stable;
+
   if (first_time)
     resize_rect = cv::boundingRect(big_contours_vector[0]);
   else
@@ -247,8 +252,10 @@ void Incremental_Decomposer::adjust_stable_contours() {
   cv::Point correction;
 
   // considering constant resolution
-  correction.x = (current_origin_.x - new_origin_.x) / resolution;
-  correction.y = (current_origin_.y - new_origin_.y) / resolution;
+  // Round instead of truncating: truncation shifted the stable contours by
+  // one cell for origin changes that are not exactly representable in float.
+  correction.x = cvRound((current_origin_.x - new_origin_.x) / resolution);
+  correction.y = cvRound((current_origin_.y - new_origin_.y) / resolution);
 
   for (int i = 0; i < Stable.Region_contour.size(); i++) {
     Stable.Region_centroid[i] += correction;

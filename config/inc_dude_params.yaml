@@ -17,6 +17,31 @@ incremental_decomposer:
     offline_image_resolution: 0.05        # Meters per pixel used only by the save-trigger batch comparison path.
     offline_free_threshold: 250           # Pixel threshold used by the save-trigger batch comparison path to create a free-space mask.
 
+    # Tracked region output (inc_dude/msg/Region2DArray, latched).
+    regions_topic: "/inc_dude/regions"    # Output topic for tracked regions with persistent canonical IDs.
+    publish_missing_regions: false        # Also publish regions not observed recently (status MISSING, last known geometry).
+    debug_region_tracking: false          # Log raw->canonical IDs, match scores, events and publish RViz markers.
+    region_markers_topic: "/inc_dude/region_markers" # MarkerArray topic, only used when debug_region_tracking is true.
+    region_tracking:
+      adjacency_distance_cells: 2.0       # Region boundaries closer than this (cells) touch; same 2-cell threshold as are_contours_connected().
+      adjacency_min_contact_m: 0.25       # Minimum shared boundary length (m) for adjacency; rejects corner-only contacts.
+      min_region_area_m2: 0.25            # Ignore smaller regions; equals safety_distance^2 used by the incremental decomposer.
+      overlap_sample_step_m: 0.0          # Scanline spacing (m) for overlap areas; 0 uses the map resolution.
+      gate_min_containment: 0.5           # Match candidate if overlap covers >= this fraction of the smaller of track/region...
+      gate_centroid_distance_m: 0.5       # ...or if centroids are within this distance...
+      gate_min_area_ratio: 0.5            # ...and the area ratio (min/max) is at least this.
+      weight_iou: 0.5                     # Match score weights (normalized by their sum).
+      weight_containment: 0.2
+      weight_centroid: 0.2
+      weight_area: 0.1
+      centroid_distance_scale_m: 1.0      # Centroid term = exp(-distance / scale).
+      split_merge_min_fraction: 0.5       # New region >= this fraction inside a track => split; unmatched track >= this inside a region => merge.
+      retire_min_coverage: 0.5            # Unmatched track covered >= this by current regions is retired instead of kept as missing.
+      max_missed_updates: 5               # Uncovered tracks are removed after this many consecutive missed updates.
+      max_area_loss_fraction: 0.5         # Reject updates whose total region area shrinks by more than this fraction...
+      max_region_overlap_fraction: 0.25   # ...or whose regions overlap each other by more than this fraction of the smaller one...
+      max_consecutive_rejections: 3       # ...at most this many times in a row (then the change is accepted).
+
 evaluation:
   ros__parameters:
     decomp_threshold: 2.7                         # Concavity threshold in meters for DuDe and incremental evaluation decompositions.

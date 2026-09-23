@@ -72,6 +72,10 @@ Blur........ "; Image_in = Median_Image & ~black_image; cout << "And........ ";
   std::vector<cv::Vec4i> hierarchy; //[Next, Previous, First_Child, Parent]
   cv::findContours(Occ_Image, Explored_contour, hierarchy, cv::RETR_TREE,
                    cv::CHAIN_APPROX_SIMPLE);
+  if (Explored_contour.empty()) { // no free space inside this mask
+    std::cout << "no contours" << std::endl;
+    return cv::Rect();
+  }
 
   int current_index = 0;
   cv::Rect resize_rect = boundingRect(Explored_contour[0]);
