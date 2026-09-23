@@ -192,7 +192,11 @@ toMarkers(const msg::Region2DArray &regions) {
     label.pose.orientation.w = 1.0;
     label.scale.z = 0.4;
     label.color = colorForId(r.id, 1.0f);
-    label.text = std::to_string(r.id) + (missing ? "?" : "");
+    const std::string raw_id = r.source_region_index >= 0
+                                    ? std::to_string(r.source_region_index)
+                                    : "-";
+    label.text = "<" + raw_id + "," + std::to_string(r.id) + ">" +
+                 (missing ? "?" : "");
     out.markers.push_back(label);
 
     for (uint64_t adj : r.adjacent_ids) {

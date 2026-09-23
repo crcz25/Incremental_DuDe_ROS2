@@ -295,10 +295,6 @@ public:
     //*
     double cum_time = 0, cum_quad_time = 0;
     for (int i = 0; i < clean_time_vector.size(); i++) {
-      //				cout << time_vector[i] << endl;
-      printf("%.0f %.0f %.0f %.0f \n", paint_time_vector[i],
-             clean_time_vector[i], decomp_time_vector[i],
-             complete_time_vector[i]);
       cum_time += complete_time_vector[i];
       cum_quad_time += complete_time_vector[i] * complete_time_vector[i];
     }
@@ -414,21 +410,22 @@ public:
     cv::Mat Median_Image, out_image, temp_image;
     int filter_size = obstacle_filter_size_;
 
+    // normalize=true so temp_image holds the window average (0-255), not a
+    // raw sum saturated at 255 by a single active pixel; >127 is then a
+    // proper "majority of the window" vote regardless of filter_size.
     cv::boxFilter(black_image, temp_image, -1,
-                  cv::Size(filter_size, filter_size), cv::Point(-1, -1), false,
+                  cv::Size(filter_size, filter_size), cv::Point(-1, -1), true,
                   cv::BORDER_DEFAULT); // filter open_space
-    black_image =
-        temp_image > filter_size * filter_size / 2; // threshold in filtered
+    black_image = temp_image > 127; // threshold in filtered
     cv::dilate(black_image, black_image, cv::Mat(), cv::Point(-1, -1),
                obstacle_dilation_iterations_, cv::BORDER_CONSTANT,
                cv::morphologyDefaultBorderValue()); // inflate obstacle
 
     filter_size = free_space_filter_size_;
     cv::boxFilter(open_space, temp_image, -1,
-                  cv::Size(filter_size, filter_size), cv::Point(-1, -1), false,
+                  cv::Size(filter_size, filter_size), cv::Point(-1, -1), true,
                   cv::BORDER_DEFAULT); // filter open_space
-    Median_Image =
-        temp_image > filter_size * filter_size / 2; // threshold in filtered
+    Median_Image = temp_image > 127; // threshold in filtered
     Median_Image = Median_Image | open_space;
     // cv::medianBlur(Median_Image, Median_Image, 3);
     cv::dilate(Median_Image, Median_Image, cv::Mat());
@@ -455,11 +452,13 @@ public:
     cv::Mat Median_Image, out_image, temp_image;
     int filter_size = obstacle_filter_size_;
 
+    // normalize=true so temp_image holds the window average (0-255), not a
+    // raw sum saturated at 255 by a single active pixel; >127 is then a
+    // proper "majority of the window" vote regardless of filter_size.
     cv::boxFilter(black_image, temp_image, -1,
-                  cv::Size(filter_size, filter_size), cv::Point(-1, -1), false,
+                  cv::Size(filter_size, filter_size), cv::Point(-1, -1), true,
                   cv::BORDER_DEFAULT); // filter open_space
-    black_image =
-        temp_image > filter_size * filter_size / 2; // threshold in filtered
+    black_image = temp_image > 127; // threshold in filtered
     cv::dilate(black_image, black_image, cv::Mat(), cv::Point(-1, -1),
                obstacle_dilation_iterations_,
                cv::BORDER_CONSTANT,
@@ -467,10 +466,9 @@ public:
 
     filter_size = free_space_filter_size_;
     cv::boxFilter(open_space, temp_image, -1,
-                  cv::Size(filter_size, filter_size), cv::Point(-1, -1), false,
+                  cv::Size(filter_size, filter_size), cv::Point(-1, -1), true,
                   cv::BORDER_DEFAULT); // filter open_space
-    Median_Image =
-        temp_image > filter_size * filter_size / 2; // threshold in filtered
+    Median_Image = temp_image > 127; // threshold in filtered
     Median_Image = Median_Image | open_space;
     // cv::medianBlur(Median_Image, Median_Image, 3);
     cv::dilate(Median_Image, Median_Image, cv::Mat());
