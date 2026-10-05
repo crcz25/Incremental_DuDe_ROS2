@@ -139,9 +139,18 @@ public:
 
     const std::string regions_topic = this->declare_parameter<std::string>(
         "regions_topic", "/inc_dude/regions");
-    // Latched so late subscribers (e.g. the 3DSG layer) get the last state.
+    // Every update must reach the 3DSG: with publish_missing_regions false,
+    // a region's REMOVED event is in one update only, and a consumer that
+    // misses it keeps the region forever. A reliable writer only keeps its
+    // last `depth` samples for retransmission, so the depth is at least the
+    // subscribers' (navigation_server grid_cache.size and object_server
+    // regions.queue_size, 10); they detect any remaining loss as an
+    // update_index gap. Latched: a late subscriber gets the last updates, in
+    // order.
+    constexpr size_t kRegionsQosDepth = 10;
     regions_pub_ = this->create_publisher<inc_dude::msg::Region2DArray>(
-        regions_topic, rclcpp::QoS(1).transient_local().reliable());
+        regions_topic,
+        rclcpp::QoS(kRegionsQosDepth).transient_local().reliable());
     const std::string markers_topic = this->declare_parameter<std::string>(
         "region_markers_topic", "/inc_dude/region_markers");
     if (debug_region_tracking_) {

@@ -110,7 +110,10 @@ ros2 launch inc_dude inc_dude.launch.py
 
 `inc_dude` also publishes the decomposition as tracked regions with persistent
 canonical IDs on `regions_topic` (default `/inc_dude/regions`,
-`inc_dude/msg/Region2DArray`, transient-local). Each accepted decomposition
+`inc_dude/msg/Region2DArray`, reliable, transient-local, keep-last 10: at
+least the subscribers' depth, so no update is overwritten before it is
+delivered; `update_index` counts the published updates 1, 2, ... so a
+consumer can detect a lost one). Each accepted decomposition
 update is converted into frame-local `Region2D`s (map-frame polygon, centroid,
 area, boundary-contact adjacency) and matched against the existing tracks:
 
