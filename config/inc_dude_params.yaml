@@ -1,6 +1,6 @@
 incremental_decomposer:
   ros__parameters:
-    decomp_threshold: 3.0                 # Concavity threshold in meters; converted to pixels with each incoming OccupancyGrid resolution before DuDe decomposition.
+    decomp_threshold: 2.0                 # Concavity threshold in meters; converted to pixels with each incoming OccupancyGrid resolution before DuDe decomposition.
     map_topic: "/map"                     # Input nav_msgs/OccupancyGrid topic subscribed by the incremental decomposer.
     save_trigger_topic: "chatter"         # std_msgs/String topic used to trigger saving the current batch and incremental segmentation images.
     tagged_image_topic: "/tagged_image"   # Output image topic where the current tagged decomposition is published.
