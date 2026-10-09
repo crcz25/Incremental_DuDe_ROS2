@@ -3,10 +3,11 @@
 // ROS_handler lives in src/inc_dude.cpp, next to main(), with no header, so
 // this test compiles that file with main() renamed. The source is unchanged.
 //
-// DISABLED_C01_* and DISABLED_C02_* reproduce audit defects: they assert the
-// correct behaviour and fail on the current code. Run them with
-//   --gtest_also_run_disabled_tests --gtest_filter=IncDudeNode.DISABLED_C01_*
-// (C-01 needs the AddressSanitizer build, tools/ci/run_ci.sh asan).
+// DISABLED_C02_* reproduces an audit defect: it asserts the correct
+// behaviour and fails on the current code. Run it with
+//   --gtest_also_run_disabled_tests --gtest_filter=IncDudeNode.DISABLED_C02_*
+// C01_* guards the fix of C-01; it detects the defect only in the
+// AddressSanitizer build (tools/ci/run_ci.sh asan).
 
 #include <gtest/gtest.h>
 
@@ -112,7 +113,7 @@ TEST_F(IncDudeNode, SaveImageOriginalColorPaintsLabelsAndReturnsTheColormap) {
 
 // C-01: the colour vector has `max` entries, but labels run 1..max, so the
 // largest label is written and read one past its end.
-TEST_F(IncDudeNode, DISABLED_C01_SaveDecomposedImageColorHandlesTheLargestLabel) {
+TEST_F(IncDudeNode, C01_SaveDecomposedImageColorHandlesTheLargestLabel) {
   const fs::path path = freshDirectory("decomposed") / "inc.png";
   const std::vector<cv::Vec3b> colormap = {
       {208, 208, 208}, {10, 20, 30}, {40, 50, 60}, {70, 80, 90}};

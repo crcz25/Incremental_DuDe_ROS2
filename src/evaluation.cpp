@@ -838,7 +838,8 @@ public:
     std::map<int, int>::iterator map_iter;
 
     cv::minMaxLoc(image_in, &min, &max);
-    color_vector.resize(max);
+    // Labels run 1..max: max + 1 entries, the grey background at 0.
+    color_vector.resize(static_cast<size_t>(max) + 1);
 
     for (int i = 1; i <= max; i++) {
       map_iter = original_map.find(i);

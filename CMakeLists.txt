@@ -219,6 +219,21 @@ if(BUILD_TESTING)
     ${GMP_LIBRARY}
   )
 
+  # The evaluation node: test/test_evaluation_node.cpp compiles
+  # src/evaluation.cpp with main() renamed, so it links like evaluation.
+  ament_add_ros_isolated_gtest(test_evaluation_node test/test_evaluation_node.cpp
+    ${DUDE_COMMON_SOURCES} TIMEOUT 300)
+  ament_target_dependencies(test_evaluation_node ${ROS_DEPENDENCIES})
+  add_dependencies(test_evaluation_node third_party_dependencies)
+  target_link_options(test_evaluation_node PRIVATE -no-pie)
+  target_link_libraries(test_evaluation_node
+    ${FIST_LIBRARIES}
+    ${OpenCV_LIBRARIES}
+    cgal_headers
+    mpfr_static
+    ${GMP_LIBRARY}
+  )
+
   # Static analysis, opt-in with -DENABLE_LINT=ON (tools/ci/run_ci.sh): the
   # default colcon test runs no lint test.
   option(ENABLE_LINT "Add the cppcheck and clang-tidy tests" OFF)
