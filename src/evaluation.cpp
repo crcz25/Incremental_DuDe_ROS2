@@ -232,6 +232,12 @@ public:
     image_GT = cv::imread(full_path_GT, 0);                     // Read the file
     image_Furniture = cv::imread(full_path_Furniture, 0);       // Read the file
     image_No_Furniture = cv::imread(full_path_No_Furniture, 0); // Read the file
+    if (image_GT.empty() || image_Furniture.empty() || image_No_Furniture.empty()) {
+      RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                            "Cannot read the images of '%s' in '%s'; skipped",
+                            name.c_str(), base_path.c_str());
+      return;
+    }
     zero_image = cv::Mat::zeros(image_GT.size(), CV_8U);
 
     ///////// Original
@@ -309,7 +315,7 @@ public:
     ///////////
     cv::Mat to_publish3 = image_No_Furniture.clone();
     cv_ptr3->encoding = sensor_msgs::image_encodings::TYPE_32FC1;
-    to_publish2.convertTo(to_publish3, CV_32F);
+    to_publish3.convertTo(to_publish3, CV_32F);
     to_publish3.copyTo(cv_ptr3->image); ////most important
     ///////////
 
@@ -335,6 +341,12 @@ public:
     image_GT = cv::imread(full_path_GT, 0);                     // Read the file
     image_Furniture = cv::imread(full_path_Furniture, 0);       // Read the file
     image_No_Furniture = cv::imread(full_path_No_Furniture, 0); // Read the file
+    if (image_GT.empty() || image_Furniture.empty() || image_No_Furniture.empty()) {
+      RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                            "Cannot read the images of '%s' in '%s'; skipped",
+                            name.c_str(), base_path.c_str());
+      return;
+    }
     zero_image = cv::Mat::zeros(image_GT.size(), CV_8U);
 
     ///////// Original
@@ -407,7 +419,7 @@ public:
     ///////////
     cv::Mat to_publish3 = image_No_Furniture.clone();
     cv_ptr3->encoding = sensor_msgs::image_encodings::TYPE_32FC1;
-    to_publish2.convertTo(to_publish3, CV_32F);
+    to_publish3.convertTo(to_publish3, CV_32F);
     to_publish3.copyTo(cv_ptr3->image); ////most important
     ///////////
 
@@ -425,7 +437,8 @@ public:
     std::string full_path_No_Furniture = base_path + "/" + name + No_FuT_ending;
     std::string saving_path = base_path + "/Tagged_Images/" + name;
 
-    double begin_process, end_process, decompose_time;
+    // decompose_time stays 0 for the DuDe step, which is not timed.
+    double begin_process = 0.0, end_process = 0.0, decompose_time = 0.0;
     std::vector<cv::Vec3b> colormap;
     results No_Furn_Results_pixel, No_Furn_Results_Regions;
     results Furn_Results_pixel, Furn_Results_Regions;
@@ -434,6 +447,12 @@ public:
     image_Furniture = cv::imread(full_path_Furniture, 0); // Read the file
     //			image_No_Furniture    =
     //cv::imread(full_path_No_Furniture,0);   // Read the file
+    if (image_GT.empty() || image_Furniture.empty()) {
+      RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                            "Cannot read the images of '%s' in '%s'; skipped",
+                            name.c_str(), base_path.c_str());
+      return;
+    }
     zero_image = cv::Mat::zeros(image_GT.size(), CV_8U);
 
     ///////// Original
@@ -506,7 +525,7 @@ public:
     ///////////
     cv::Mat to_publish3 = image_No_Furniture.clone();
     cv_ptr3->encoding = sensor_msgs::image_encodings::TYPE_32FC1;
-    to_publish2.convertTo(to_publish3, CV_32F);
+    to_publish3.convertTo(to_publish3, CV_32F);
     to_publish3.copyTo(cv_ptr3->image); ////most important
     ///////////
 
@@ -718,7 +737,7 @@ public:
 
     // iterate through all the top-level contours,
     // draw each connected component with its own random color
-    int idx = 0;
+    int idx = hierarchy.empty() ? -1 : 0;  // no contour: nothing to draw
     int color = 1;
     for (; idx >= 0; idx = hierarchy[idx][0]) {
       cv::drawContours(drawing, contours, idx, color, cv::FILLED, 20, hierarchy);
