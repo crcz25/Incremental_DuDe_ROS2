@@ -197,6 +197,28 @@ if(BUILD_TESTING)
   )
   target_link_libraries(test_region_tracking inc_dude_tracking)
 
+  # ROS message conversion of tracked regions.
+  ament_add_gtest(test_region_msg_conversion test/test_region_msg_conversion.cpp)
+  target_link_libraries(test_region_msg_conversion inc_dude_region_msgs)
+
+  # The node's save path: test/test_inc_dude_node.cpp compiles src/inc_dude.cpp
+  # with main() renamed, so it links like inc_dude_node. Creates a node, so
+  # it gets its own ROS_DOMAIN_ID.
+  find_package(ament_cmake_ros REQUIRED)
+  ament_add_ros_isolated_gtest(test_inc_dude_node test/test_inc_dude_node.cpp
+    ${DUDE_COMMON_SOURCES} TIMEOUT 300)
+  ament_target_dependencies(test_inc_dude_node ${ROS_DEPENDENCIES})
+  add_dependencies(test_inc_dude_node third_party_dependencies)
+  target_link_options(test_inc_dude_node PRIVATE -no-pie)
+  target_link_libraries(test_inc_dude_node
+    inc_dude_region_msgs
+    ${FIST_LIBRARIES}
+    ${OpenCV_LIBRARIES}
+    cgal_headers
+    mpfr_static
+    ${GMP_LIBRARY}
+  )
+
   # Static analysis, opt-in with -DENABLE_LINT=ON (tools/ci/run_ci.sh): the
   # default colcon test runs no lint test.
   option(ENABLE_LINT "Add the cppcheck and clang-tidy tests" OFF)
