@@ -3,11 +3,9 @@
 // ROS_handler lives in src/inc_dude.cpp, next to main(), with no header, so
 // this test compiles that file with main() renamed. The source is unchanged.
 //
-// DISABLED_C02_* reproduces an audit defect: it asserts the correct
-// behaviour and fails on the current code. Run it with
-//   --gtest_also_run_disabled_tests --gtest_filter=IncDudeNode.DISABLED_C02_*
-// C01_* guards the fix of C-01; it detects the defect only in the
-// AddressSanitizer build (tools/ci/run_ci.sh asan).
+// C01_* and C02_* guard the fixes of audit defects C-01 and C-02. C01_*
+// detects its defect only in the AddressSanitizer build
+// (tools/ci/run_ci.sh asan).
 
 #include <gtest/gtest.h>
 
@@ -129,11 +127,11 @@ TEST_F(IncDudeNode, C01_SaveDecomposedImageColorHandlesTheLargestLabel) {
 }
 
 // C-02: a save trigger before the first map has nothing to save; the
-// callback must return without touching the empty images. Today it throws
-// cv::Exception from simple_segment() on the empty image, before it reaches
-// the unchecked test_contour[0] (inc_dude.cpp:358); in the node the exception
-// leaves the subscription callback and stops the process.
-TEST_F(IncDudeNode, DISABLED_C02_SaveTriggerBeforeTheFirstMapIsANoOp) {
+// callback must return without touching the empty images. Before the fix it
+// threw cv::Exception from simple_segment() on the empty image, before it
+// reached the unchecked test_contour[0]; in the node the exception left the
+// subscription callback and stopped the process.
+TEST_F(IncDudeNode, C02_SaveTriggerBeforeTheFirstMapIsANoOp) {
   auto trigger = std::make_shared<std_msgs::msg::String>();
   trigger->data = "before_map";
   try {

@@ -334,6 +334,13 @@ public:
   ////////////////
   void chatCallback(const std_msgs::msg::String::SharedPtr chat_msg) {
     std::cout << "chat in" << std::endl;
+    // Nothing to save before the first decomposed map.
+    if (image2save_clean.empty() || image2save_black.empty() ||
+        image2save_Inc.empty()) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                           "Save trigger ignored: no map decomposed yet");
+      return;
+    }
 
     std::string saving_path = segmentation_output_directory_ + "/";
     cv::Mat proxy, zero = cv::Mat::zeros(image2save_clean.size(), CV_8U);
@@ -354,6 +361,12 @@ public:
     std::vector<std::vector<cv::Point>> test_contour;
     cv::findContours(destroyable_batch, test_contour, cv::RETR_EXTERNAL,
                      cv::CHAIN_APPROX_SIMPLE);
+    if (test_contour.empty()) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                           "Save trigger ignored: the batch segmentation has "
+                           "no region");
+      return;
+    }
 
     cv::Rect first_rect = cv::boundingRect(test_contour[0]);
     for (int i = 1; i < test_contour.size(); i++) {
