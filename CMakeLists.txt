@@ -196,6 +196,53 @@ if(BUILD_TESTING)
     test/test_region_tracker.cpp
   )
   target_link_libraries(test_region_tracking inc_dude_tracking)
+
+  # Static analysis, opt-in with -DENABLE_LINT=ON (tools/ci/run_ci.sh): the
+  # default colcon test runs no lint test.
+  option(ENABLE_LINT "Add the cppcheck and clang-tidy tests" OFF)
+  if(ENABLE_LINT)
+    find_package(ament_cmake_cppcheck REQUIRED)
+    ament_cppcheck(include src test
+      LANGUAGE c++ INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    # ament_cppcheck otherwise skips cppcheck 1.88 and 2.x as too slow.
+    set_tests_properties(cppcheck PROPERTIES
+      ENVIRONMENT "AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS=1")
+    find_package(ament_cmake_clang_tidy QUIET)
+    if(ament_cmake_clang_tidy_FOUND)
+      # The workspace .clang-tidy, in this directory or the nearest parent.
+      set(_clang_tidy_dir "${CMAKE_CURRENT_SOURCE_DIR}")
+      while(NOT EXISTS "${_clang_tidy_dir}/.clang-tidy" AND
+            NOT _clang_tidy_dir STREQUAL "/")
+        get_filename_component(_clang_tidy_dir "${_clang_tidy_dir}" DIRECTORY)
+      endwhile()
+      # ament_clang_tidy lints every entry of compile_commands.json and has
+      # no exclude option: give it a copy without the vendored Third_Party/
+      # sources, the rosidl-generated sources in the build tree and, as for
+      # the other packages, test/ (ament skips <package>/test/, and this
+      # package's directory is incremental_dude).
+      set(_clang_tidy_db_dir "${CMAKE_CURRENT_BINARY_DIR}/clang_tidy/${PROJECT_NAME}")
+      add_custom_target(clang_tidy_compile_commands ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${_clang_tidy_db_dir}"
+        COMMAND ${CMAKE_COMMAND}
+          -DINPUT=${CMAKE_BINARY_DIR}/compile_commands.json
+          -DOUTPUT=${_clang_tidy_db_dir}/compile_commands.json
+          "-DEXCLUDE=/Third_Party/|/test/|^${CMAKE_BINARY_DIR}/"
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/filter_compile_commands.cmake
+        VERBATIM)
+      # ament_clang_tidy passes its own --header-filter (include/<package>/),
+      # which overrides HeaderFilterRegex, and runs one job under a 300 s
+      # timeout: report this package's own headers, on every core.
+      cmake_host_system_information(RESULT _clang_tidy_jobs
+        QUERY NUMBER_OF_LOGICAL_CORES)
+      ament_clang_tidy("${_clang_tidy_db_dir}"
+        --jobs ${_clang_tidy_jobs}
+        --header-filter "${CMAKE_CURRENT_SOURCE_DIR}/(include|src|test)/.*"
+        CONFIG_FILE "${_clang_tidy_dir}/.clang-tidy"
+        TIMEOUT 1800)
+    else()
+      message(WARNING "ament_cmake_clang_tidy not found: no clang_tidy test")
+    endif()
+  endif()
 endif()
 
 ament_export_dependencies(rosidl_default_runtime)
