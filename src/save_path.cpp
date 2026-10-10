@@ -35,9 +35,13 @@ std::optional<std::string> savePath(const std::string &directory,
   }
   namespace fs = std::filesystem;
   std::error_code error;
-  const fs::path base = fs::weakly_canonical(fs::path(directory), error);
+  fs::path base = fs::weakly_canonical(fs::path(directory), error);
   if (error) {
     return std::nullopt;
+  }
+  // A directory that does not exist yet keeps its trailing separator.
+  if (!base.has_filename() && base.has_relative_path()) {
+    base = base.parent_path();
   }
   const fs::path path = fs::weakly_canonical(base / (name + suffix), error);
   if (error || path.parent_path() != base) {

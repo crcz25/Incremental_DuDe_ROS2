@@ -17,7 +17,10 @@ namespace fs = std::filesystem;
 class SavePath : public ::testing::Test {
 protected:
   void SetUp() override {
-    root_ = fs::path(::testing::TempDir()) / "inc_dude_save_path";
+    root_ = fs::path(::testing::TempDir()) /
+            ("inc_dude_save_path_" + std::string(::testing::UnitTest::GetInstance()
+                                                     ->current_test_info()
+                                                     ->name()));
     fs::remove_all(root_);
     out_ = root_ / "out";
     fs::create_directories(out_);
@@ -36,6 +39,15 @@ TEST_F(SavePath, AcceptsAPlainName) {
   ASSERT_TRUE(p);
   EXPECT_EQ(fs::path(*p), fs::weakly_canonical(out_ / "run_01-a.b_Batch.png"));
   EXPECT_EQ(fs::path(*p).parent_path(), fs::weakly_canonical(out_));
+}
+
+TEST_F(SavePath, AcceptsADirectoryWithATrailingSeparator) {
+  // The directory need not exist yet (the write then reports the error).
+  const fs::path missing = root_ / "missing";
+  const auto p =
+      inc_dude::savePath(missing.string() + "/", "run", "_Batch.png");
+  ASSERT_TRUE(p);
+  EXPECT_EQ(fs::path(*p), fs::weakly_canonical(missing / "run_Batch.png"));
 }
 
 TEST_F(SavePath, RejectsNamesThatLeaveTheOutputDirectory) {
