@@ -1,7 +1,7 @@
 // ROS
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/string.hpp"
+#include "std_srvs/srv/trigger.hpp"
 #include "ament_index_cpp/get_package_share_directory.hpp"
 
 // openCV
@@ -39,7 +39,7 @@ class ROS_handler : public rclcpp::Node {
   std::string mapname_;
   std::string maps_path_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
-  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr chat_sub_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr save_service_;
   rclcpp::TimerBase::SharedPtr timer;
 
   float Decomp_threshold_;
@@ -98,8 +98,9 @@ public:
     }
     const std::string map_topic =
         this->declare_parameter<std::string>("map_topic", mapname_);
-    const std::string save_trigger_topic =
-        this->declare_parameter<std::string>("save_trigger_topic", "chatter");
+    // Names the images ~/save writes (<name>_Batch.png, <name>_Inc.png);
+    // read at each call.
+    this->declare_parameter<std::string>("save_file_name", "segmentation");
     const std::string tagged_image_topic = this->declare_parameter<std::string>(
         "tagged_image_topic", "/tagged_image");
     const int publish_period_ms =
@@ -129,9 +130,10 @@ public:
     map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
         map_topic, rclcpp::QoS(2).transient_local().reliable(),
         std::bind(&ROS_handler::mapCallback, this, std::placeholders::_1));
-    chat_sub_ = this->create_subscription<std_msgs::msg::String>(
-        save_trigger_topic, 1,
-        std::bind(&ROS_handler::chatCallback, this, std::placeholders::_1));
+    // Private service: only a caller that addresses this node saves.
+    save_service_ = this->create_service<std_srvs::srv::Trigger>(
+        "~/save", std::bind(&ROS_handler::saveCallback, this,
+                            std::placeholders::_1, std::placeholders::_2));
     timer = this->create_wall_timer(
         std::chrono::milliseconds(publish_period_ms),
         std::bind(&ROS_handler::metronomeCallback, this));
@@ -333,30 +335,54 @@ public:
   }
 
   ////////////////
-  void chatCallback(const std_msgs::msg::String::SharedPtr chat_msg) {
-    std::cout << "chat in" << std::endl;
+  // ~/save (std_srvs/Trigger): saves the batch and incremental
+  // segmentations of the current map as <save_file_name>_Batch.png and
+  // <save_file_name>_Inc.png in segmentation_output_directory.
+  void saveCallback(
+      const std::shared_ptr<std_srvs::srv::Trigger::Request> & /*request*/,
+      const std::shared_ptr<std_srvs::srv::Trigger::Response> &response) {
+    std::string message;
+    try {
+      response->success = saveSegmentation(
+          this->get_parameter("save_file_name").as_string(), message);
+    } catch (const std::exception &e) {
+      response->success = false;
+      message = std::string("save failed: ") + e.what();
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                           "Save failed: %s", e.what());
+    }
+    response->message = message;
+  }
+
+  // Saves the current segmentations as <name>_Batch.png and <name>_Inc.png;
+  // false, with the reason in `message`, when nothing could be saved.
+  bool saveSegmentation(const std::string &name, std::string &message) {
     // Nothing to save before the first decomposed map.
     if (image2save_clean.empty() || image2save_black.empty() ||
         image2save_Inc.empty()) {
+      message = "no map decomposed yet";
       RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                           "Save trigger ignored: no map decomposed yet");
-      return;
+                           "Save ignored: no map decomposed yet");
+      return false;
     }
-    // The trigger text names the files: only a plain name, inside the
-    // output directory.
+    // Only a plain name, inside the output directory.
     const std::optional<std::string> batch_path = inc_dude::savePath(
-        segmentation_output_directory_, chat_msg->data, "_Batch.png");
+        segmentation_output_directory_, name, "_Batch.png");
     const std::optional<std::string> inc_path = inc_dude::savePath(
-        segmentation_output_directory_, chat_msg->data, "_Inc.png");
+        segmentation_output_directory_, name, "_Inc.png");
     if (!batch_path || !inc_path) {
+      message = "save_file_name is not a valid file name (1-" +
+                std::to_string(inc_dude::kMaxSaveNameLength) +
+                " of [A-Za-z0-9._-], no '..') in " +
+                segmentation_output_directory_;
       // The name itself is not logged: it is untrusted text.
       RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                           "Save trigger ignored: the %zu-character name is "
-                           "not a valid file name (1-%zu of [A-Za-z0-9._-], "
-                           "no '..') in '%s'",
-                           chat_msg->data.size(), inc_dude::kMaxSaveNameLength,
+                           "Save ignored: the %zu-character name is not a "
+                           "valid file name (1-%zu of [A-Za-z0-9._-], no "
+                           "'..') in '%s'",
+                           name.size(), inc_dude::kMaxSaveNameLength,
                            segmentation_output_directory_.c_str());
-      return;
+      return false;
     }
 
     cv::Mat proxy, zero = cv::Mat::zeros(image2save_clean.size(), CV_8U);
@@ -378,10 +404,11 @@ public:
     cv::findContours(destroyable_batch, test_contour, cv::RETR_EXTERNAL,
                      cv::CHAIN_APPROX_SIMPLE);
     if (test_contour.empty()) {
+      message = "the batch segmentation has no region";
       RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                           "Save trigger ignored: the batch segmentation has "
-                           "no region");
-      return;
+                           "Save ignored: the batch segmentation has no "
+                           "region");
+      return false;
     }
 
     cv::Rect first_rect = cv::boundingRect(test_contour[0]);
@@ -405,17 +432,26 @@ public:
     image2save_Inc(first_rect)
         .copyTo(cropped_Inc); /////////// Cut the relevant image
 
+    bool batch_written = false, inc_written = false;
     if (true) {
       std::vector<cv::Vec3b> colormap =
-          save_image_original_color(*batch_path, cropped_Batch);
-      save_decomposed_image_color(*inc_path, cropped_Inc, colormap,
-                                  Batch_Inc_map);
+          save_image_original_color(*batch_path, cropped_Batch, &batch_written);
+      inc_written = save_decomposed_image_color(*inc_path, cropped_Inc,
+                                                colormap, Batch_Inc_map);
     } else {
       std::vector<cv::Vec3b> colormap =
-          save_image_original_color(*inc_path, image2save_Inc);
-      save_decomposed_image_color(*batch_path, Batch_segmentated, colormap,
-                                  Batch_Inc_map);
+          save_image_original_color(*inc_path, image2save_Inc, &inc_written);
+      batch_written = save_decomposed_image_color(
+          *batch_path, Batch_segmentated, colormap, Batch_Inc_map);
     }
+    if (!batch_written || !inc_written) {
+      message = "cannot write " + (batch_written ? *inc_path : *batch_path);
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                           "Save failed: %s", message.c_str());
+      return false;
+    }
+    message = "saved " + *batch_path + " and " + *inc_path;
+    return true;
   }
 
   ////////////////////////
@@ -702,7 +738,8 @@ public:
   typedef std::map<int, tag2points> tag2tagMapper;
 
   /////////////////
-  void save_decomposed_image_color(std::string path, cv::Mat image_in,
+  // True when the image was written.
+  bool save_decomposed_image_color(const std::string &path, cv::Mat image_in,
                                    std::vector<cv::Vec3b> colormap,
                                    std::map<int, int> original_map) {
     double min, max;
@@ -734,12 +771,14 @@ public:
         image_float.at<cv::Vec3b>(i, j) = color_vector[color_index];
       }
     }
-    cv::imwrite(path, image_float);
+    return cv::imwrite(path, image_float);
   }
 
   /////////////////
-  std::vector<cv::Vec3b> save_image_original_color(std::string path,
-                                                   cv::Mat image_in) {
+  // `written` (optional): whether the image was written.
+  std::vector<cv::Vec3b> save_image_original_color(const std::string &path,
+                                                   cv::Mat image_in,
+                                                   bool *written = nullptr) {
 
     double min, max;
     std::vector<cv::Vec3b> color_vector;
@@ -759,7 +798,10 @@ public:
         image_float.at<cv::Vec3b>(i, j) = color_vector[color_index];
       }
     }
-    cv::imwrite(path, image_float);
+    const bool ok = cv::imwrite(path, image_float);
+    if (written) {
+      *written = ok;
+    }
 
     return color_vector;
   }

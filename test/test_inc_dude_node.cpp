@@ -34,6 +34,7 @@
 #include "inc_dude/decomposition_adapter.hpp"
 #include "inc_dude/region_msg_conversion.hpp"
 #include "inc_dude/region_tracker.hpp"
+#include "std_srvs/srv/trigger.hpp"
 
 #define main inc_dude_node_main
 #include "../src/inc_dude.cpp"
@@ -41,6 +42,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <optional>
 #include <map>
 #include <string>
 #include <vector>
@@ -132,12 +134,11 @@ TEST_F(IncDudeNode, C01_SaveDecomposedImageColorHandlesTheLargestLabel) {
 // reached the unchecked test_contour[0]; in the node the exception left the
 // subscription callback and stopped the process.
 TEST_F(IncDudeNode, C02_SaveTriggerBeforeTheFirstMapIsANoOp) {
-  auto trigger = std::make_shared<std_msgs::msg::String>();
-  trigger->data = "before_map";
+  std::string message;
   try {
-    node_->chatCallback(trigger);
+    EXPECT_FALSE(node_->saveSegmentation("before_map", message));
   } catch (const std::exception &e) {
-    ADD_FAILURE() << "chatCallback threw: " << e.what();
+    ADD_FAILURE() << "saveSegmentation threw: " << e.what();
   }
   EXPECT_FALSE(fs::exists(output_dir_ / "before_map_Batch.png"));
   EXPECT_FALSE(fs::exists(output_dir_ / "before_map_Inc.png"));
@@ -168,26 +169,116 @@ nav_msgs::msg::OccupancyGrid::SharedPtr twoRoomMap() {
 
 }  // namespace
 
-// H-01: the trigger text is the file name; a name that leaves the output
-// directory must not write anything, a plain name saves both images.
+// H-01: the save names the files; a name that leaves the output directory
+// must not write anything, a plain name saves both images.
 TEST_F(IncDudeNode, H01_SaveTriggerNamesCannotLeaveTheOutputDirectory) {
   node_->mapCallback(twoRoomMap());
   const fs::path outside = output_dir_.parent_path();
   fs::remove(outside / "h01_escaped_Batch.png");
   fs::remove(outside / "h01_escaped_Inc.png");
 
-  auto trigger = std::make_shared<std_msgs::msg::String>();
+  std::string message;
   for (const std::string name : {"../h01_escaped", "/tmp/h01_escaped",
                                  "a/../../h01_escaped", ".."}) {
-    trigger->data = name;
-    node_->chatCallback(trigger);
+    EXPECT_FALSE(node_->saveSegmentation(name, message)) << name;
   }
   EXPECT_FALSE(fs::exists(outside / "h01_escaped_Batch.png"));
   EXPECT_FALSE(fs::exists(outside / "h01_escaped_Inc.png"));
   EXPECT_FALSE(fs::exists("/tmp/h01_escaped_Batch.png"));
 
-  trigger->data = "h01_valid";
-  node_->chatCallback(trigger);
+  EXPECT_TRUE(node_->saveSegmentation("h01_valid", message)) << message;
   EXPECT_TRUE(fs::exists(output_dir_ / "h01_valid_Batch.png"));
   EXPECT_TRUE(fs::exists(output_dir_ / "h01_valid_Inc.png"));
+}
+
+namespace {
+
+using std_srvs::srv::Trigger;
+
+// Calls the node's private ~/save service (bounded waits for discovery and
+// the response; nothing is timed).
+std::optional<Trigger::Response> callSave(const std::shared_ptr<ROS_handler> &node) {
+  auto client_node = std::make_shared<rclcpp::Node>("h02_client");
+  auto client =
+      client_node->create_client<Trigger>("/incremental_decomposer/save");
+  rclcpp::executors::SingleThreadedExecutor executor;
+  executor.add_node(node);
+  executor.add_node(client_node);
+  for (int i = 0; i < 300 && !client->service_is_ready(); ++i) {
+    executor.spin_some(std::chrono::milliseconds(10));
+  }
+  if (!client->service_is_ready()) {
+    return std::nullopt;
+  }
+  auto future = client->async_send_request(std::make_shared<Trigger::Request>());
+  if (executor.spin_until_future_complete(future, std::chrono::seconds(30)) !=
+      rclcpp::FutureReturnCode::SUCCESS) {
+    return std::nullopt;
+  }
+  return *future.get();
+}
+
+}  // namespace
+
+// H-02: the save trigger is the node's private ~/save service; it names the
+// files with the save_file_name parameter.
+TEST_F(IncDudeNode, H02_SaveServiceBeforeTheFirstMapFails) {
+  const auto response = callSave(node_);
+  ASSERT_TRUE(response) << "no ~/save service";
+  EXPECT_FALSE(response->success);
+  EXPECT_NE(response->message.find("no map"), std::string::npos) << response->message;
+}
+
+TEST_F(IncDudeNode, H02_SaveServiceSavesTheNamedImagesAfterAMap) {
+  node_->mapCallback(twoRoomMap());
+  node_->set_parameter(rclcpp::Parameter("save_file_name", "h02_saved"));
+  const auto response = callSave(node_);
+  ASSERT_TRUE(response) << "no ~/save service";
+  EXPECT_TRUE(response->success) << response->message;
+  EXPECT_TRUE(fs::exists(output_dir_ / "h02_saved_Batch.png"));
+  EXPECT_TRUE(fs::exists(output_dir_ / "h02_saved_Inc.png"));
+}
+
+TEST_F(IncDudeNode, H02_SaveServiceRejectsAnInvalidName) {
+  node_->mapCallback(twoRoomMap());
+  const fs::path outside = output_dir_.parent_path();
+  fs::remove(outside / "h02_escaped_Batch.png");
+  node_->set_parameter(rclcpp::Parameter("save_file_name", "../h02_escaped"));
+  const auto response = callSave(node_);
+  ASSERT_TRUE(response) << "no ~/save service";
+  EXPECT_FALSE(response->success);
+  EXPECT_NE(response->message.find("file name"), std::string::npos) << response->message;
+  EXPECT_FALSE(fs::exists(outside / "h02_escaped_Batch.png"));
+}
+
+TEST_F(IncDudeNode, H02_SaveServiceReportsAWriteFailure) {
+  node_->mapCallback(twoRoomMap());
+  // A directory where the image should go: the write fails.
+  fs::create_directories(output_dir_ / "h02_blocked_Batch.png");
+  node_->set_parameter(rclcpp::Parameter("save_file_name", "h02_blocked"));
+  const auto response = callSave(node_);
+  ASSERT_TRUE(response) << "no ~/save service";
+  EXPECT_FALSE(response->success);
+  EXPECT_NE(response->message.find("write"), std::string::npos) << response->message;
+}
+
+// H-02: a message on the shared 'chatter' topic no longer saves anything.
+TEST_F(IncDudeNode, H02_ChatterNoLongerTriggersASave) {
+  node_->mapCallback(twoRoomMap());
+  auto source = std::make_shared<rclcpp::Node>("h02_chatter_source");
+  auto publisher = source->create_publisher<std_msgs::msg::String>("chatter", 1);
+  rclcpp::executors::SingleThreadedExecutor executor;
+  executor.add_node(node_);
+  executor.add_node(source);
+  for (int i = 0; i < 100 && publisher->get_subscription_count() == 0; ++i) {
+    executor.spin_some(std::chrono::milliseconds(10));
+  }
+  std_msgs::msg::String trigger;
+  trigger.data = "h02_chatter";
+  publisher->publish(trigger);
+  for (int i = 0; i < 100; ++i) {
+    executor.spin_some(std::chrono::milliseconds(10));
+  }
+  EXPECT_FALSE(fs::exists(output_dir_ / "h02_chatter_Batch.png"));
+  EXPECT_FALSE(fs::exists(output_dir_ / "h02_chatter_Inc.png"));
 }

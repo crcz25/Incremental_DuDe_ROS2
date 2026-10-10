@@ -51,7 +51,7 @@ The `incremental_decomposer` parameters are:
 
 - `decomp_threshold`: concavity threshold in meters.
 - `map_topic`: input occupancy grid topic.
-- `save_trigger_topic`: string topic that triggers saving comparison images.
+- `save_file_name`: name of the comparison images the private `~/save` service writes (`<name>_Batch.png`, `<name>_Inc.png` in `segmentation_output_directory`); 1-128 characters of `[A-Za-z0-9._-]`, no `..`.
 - `tagged_image_topic`: output tagged decomposition image topic.
 - `publish_period_ms`: tagged image republish period.
 - `maps_path`: base map directory; empty uses the package `maps` directory.
@@ -93,7 +93,11 @@ Transforms an occupancy grid into an OpenCV binary image, compares it to the pre
 
 #### `inc_dude`
 
-Subscribes to `/map` and publishes the decomposition image on `/tagged_image`. The `/chatter` topic is used to save the current decomposition image.
+Subscribes to `/map` and publishes the decomposition image on `/tagged_image`. The private `~/save` service (`std_srvs/srv/Trigger`, `/incremental_decomposer/save`) saves the current decomposition images; it answers `success: false` with the reason when no map was decomposed yet, the name is not valid, or a file cannot be written:
+
+```bash
+ros2 service call /incremental_decomposer/save std_srvs/srv/Trigger
+```
 
 ```bash
 source install/setup.bash

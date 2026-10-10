@@ -2,7 +2,7 @@ incremental_decomposer:
   ros__parameters:
     decomp_threshold: 2.0                 # Concavity threshold in meters; converted to pixels with each incoming OccupancyGrid resolution before DuDe decomposition.
     map_topic: "/map"                     # Input nav_msgs/OccupancyGrid topic subscribed by the incremental decomposer.
-    save_trigger_topic: "chatter"         # std_msgs/String topic used to trigger saving the current batch and incremental segmentation images.
+    save_file_name: "segmentation"        # Name of the images the private ~/save service (std_srvs/Trigger) writes: <name>_Batch.png and <name>_Inc.png in segmentation_output_directory; 1-128 of [A-Za-z0-9._-], no "..".
     tagged_image_topic: "/tagged_image"   # Output image topic where the current tagged decomposition is published.
     publish_period_ms: 500                # Period in milliseconds for republishing the latest tagged image.
     maps_path: ""                         # Base maps directory; empty means use the package share directory's maps folder.
