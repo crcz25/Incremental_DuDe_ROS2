@@ -22,6 +22,7 @@
 #include "inc_dude/decomposition_adapter.hpp"
 #include "inc_dude/region_msg_conversion.hpp"
 #include "inc_dude/region_tracker.hpp"
+#include "inc_dude/save_path.hpp"
 
 #include <chrono>
 #include <functional>
@@ -342,7 +343,6 @@ public:
       return;
     }
 
-    std::string saving_path = segmentation_output_directory_ + "/";
     cv::Mat proxy, zero = cv::Mat::zeros(image2save_clean.size(), CV_8U);
     ///////////
     cv::Mat Batch_segmentated = simple_segment(image2save_clean);
@@ -389,16 +389,20 @@ public:
     image2save_Inc(first_rect)
         .copyTo(cropped_Inc); /////////// Cut the relevant image
 
+    const std::optional<std::string> batch_path = inc_dude::savePath(
+        segmentation_output_directory_, chat_msg->data, "_Batch.png");
+    const std::optional<std::string> inc_path = inc_dude::savePath(
+        segmentation_output_directory_, chat_msg->data, "_Inc.png");
     if (true) {
-      std::vector<cv::Vec3b> colormap = save_image_original_color(
-          saving_path + chat_msg->data + "_Batch.png", cropped_Batch);
-      save_decomposed_image_color(saving_path + chat_msg->data + "_Inc.png",
-                                  cropped_Inc, colormap, Batch_Inc_map);
+      std::vector<cv::Vec3b> colormap =
+          save_image_original_color(*batch_path, cropped_Batch);
+      save_decomposed_image_color(*inc_path, cropped_Inc, colormap,
+                                  Batch_Inc_map);
     } else {
-      std::vector<cv::Vec3b> colormap = save_image_original_color(
-          saving_path + chat_msg->data + "_Inc.png", image2save_Inc);
-      save_decomposed_image_color(saving_path + chat_msg->data + "_Batch.png",
-                                  Batch_segmentated, colormap, Batch_Inc_map);
+      std::vector<cv::Vec3b> colormap =
+          save_image_original_color(*inc_path, image2save_Inc);
+      save_decomposed_image_color(*batch_path, Batch_segmentated, colormap,
+                                  Batch_Inc_map);
     }
   }
 

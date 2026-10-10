@@ -47,6 +47,11 @@ target_include_directories(inc_dude_tracking PUBLIC
 target_link_libraries(inc_dude_tracking PUBLIC opencv_core)
 set_target_properties(inc_dude_tracking PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# Paths of the images the save trigger writes.
+add_library(inc_dude_save_path STATIC src/save_path.cpp)
+target_include_directories(inc_dude_save_path PUBLIC ${PROJECT_SOURCE_DIR}/include)
+set_target_properties(inc_dude_save_path PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # ROS message conversion for tracked regions.
 add_library(inc_dude_region_msgs STATIC
   src/tracking/region_msg_conversion.cpp
@@ -166,7 +171,7 @@ endfunction()
 
 add_inc_dude_executable(inc_dude_node src/inc_dude.cpp)
 set_target_properties(inc_dude_node PROPERTIES OUTPUT_NAME inc_dude)
-target_link_libraries(inc_dude_node inc_dude_region_msgs)
+target_link_libraries(inc_dude_node inc_dude_region_msgs inc_dude_save_path)
 add_inc_dude_executable(evaluation src/evaluation.cpp)
 
 install(TARGETS
@@ -212,6 +217,7 @@ if(BUILD_TESTING)
   target_link_options(test_inc_dude_node PRIVATE -no-pie)
   target_link_libraries(test_inc_dude_node
     inc_dude_region_msgs
+    inc_dude_save_path
     ${FIST_LIBRARIES}
     ${OpenCV_LIBRARIES}
     cgal_headers
