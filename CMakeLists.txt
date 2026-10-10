@@ -202,6 +202,10 @@ if(BUILD_TESTING)
   )
   target_link_libraries(test_region_tracking inc_dude_tracking)
 
+  # Names and paths of the images the save trigger writes (H-01).
+  ament_add_gtest(test_save_path test/test_save_path.cpp)
+  target_link_libraries(test_save_path inc_dude_save_path)
+
   # ROS message conversion of tracked regions.
   ament_add_gtest(test_region_msg_conversion test/test_region_msg_conversion.cpp)
   target_link_libraries(test_region_msg_conversion inc_dude_region_msgs)

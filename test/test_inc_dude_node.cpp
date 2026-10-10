@@ -142,3 +142,52 @@ TEST_F(IncDudeNode, C02_SaveTriggerBeforeTheFirstMapIsANoOp) {
   EXPECT_FALSE(fs::exists(output_dir_ / "before_map_Batch.png"));
   EXPECT_FALSE(fs::exists(output_dir_ / "before_map_Inc.png"));
 }
+
+namespace {
+
+// Two rooms joined by a door (free 0, walls 100, unknown -1 around them),
+// 120 x 160 cells of 0.05 m: a map the decomposer splits into regions.
+nav_msgs::msg::OccupancyGrid::SharedPtr twoRoomMap() {
+  auto map = std::make_shared<nav_msgs::msg::OccupancyGrid>();
+  map->header.frame_id = "map";
+  map->info.resolution = 0.05f;
+  map->info.width = 160;
+  map->info.height = 120;
+  map->info.origin.orientation.w = 1.0;
+  map->data.assign(std::size_t{160} * 120, -1);
+  auto cell = [&](int r, int c) -> int8_t & { return map->data[r * 160 + c]; };
+  for (int r = 15; r < 105; ++r) {
+    for (int c = 15; c < 145; ++c) {
+      const bool border = r < 20 || r >= 100 || c < 20 || c >= 140;
+      const bool wall = c >= 78 && c < 82 && !(r >= 50 && r < 70);
+      cell(r, c) = border || wall ? 100 : 0;
+    }
+  }
+  return map;
+}
+
+}  // namespace
+
+// H-01: the trigger text is the file name; a name that leaves the output
+// directory must not write anything, a plain name saves both images.
+TEST_F(IncDudeNode, H01_SaveTriggerNamesCannotLeaveTheOutputDirectory) {
+  node_->mapCallback(twoRoomMap());
+  const fs::path outside = output_dir_.parent_path();
+  fs::remove(outside / "h01_escaped_Batch.png");
+  fs::remove(outside / "h01_escaped_Inc.png");
+
+  auto trigger = std::make_shared<std_msgs::msg::String>();
+  for (const std::string name : {"../h01_escaped", "/tmp/h01_escaped",
+                                 "a/../../h01_escaped", ".."}) {
+    trigger->data = name;
+    node_->chatCallback(trigger);
+  }
+  EXPECT_FALSE(fs::exists(outside / "h01_escaped_Batch.png"));
+  EXPECT_FALSE(fs::exists(outside / "h01_escaped_Inc.png"));
+  EXPECT_FALSE(fs::exists("/tmp/h01_escaped_Batch.png"));
+
+  trigger->data = "h01_valid";
+  node_->chatCallback(trigger);
+  EXPECT_TRUE(fs::exists(output_dir_ / "h01_valid_Batch.png"));
+  EXPECT_TRUE(fs::exists(output_dir_ / "h01_valid_Inc.png"));
+}

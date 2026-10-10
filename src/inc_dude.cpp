@@ -342,6 +342,22 @@ public:
                            "Save trigger ignored: no map decomposed yet");
       return;
     }
+    // The trigger text names the files: only a plain name, inside the
+    // output directory.
+    const std::optional<std::string> batch_path = inc_dude::savePath(
+        segmentation_output_directory_, chat_msg->data, "_Batch.png");
+    const std::optional<std::string> inc_path = inc_dude::savePath(
+        segmentation_output_directory_, chat_msg->data, "_Inc.png");
+    if (!batch_path || !inc_path) {
+      // The name itself is not logged: it is untrusted text.
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                           "Save trigger ignored: the %zu-character name is "
+                           "not a valid file name (1-%zu of [A-Za-z0-9._-], "
+                           "no '..') in '%s'",
+                           chat_msg->data.size(), inc_dude::kMaxSaveNameLength,
+                           segmentation_output_directory_.c_str());
+      return;
+    }
 
     cv::Mat proxy, zero = cv::Mat::zeros(image2save_clean.size(), CV_8U);
     ///////////
@@ -389,10 +405,6 @@ public:
     image2save_Inc(first_rect)
         .copyTo(cropped_Inc); /////////// Cut the relevant image
 
-    const std::optional<std::string> batch_path = inc_dude::savePath(
-        segmentation_output_directory_, chat_msg->data, "_Batch.png");
-    const std::optional<std::string> inc_path = inc_dude::savePath(
-        segmentation_output_directory_, chat_msg->data, "_Inc.png");
     if (true) {
       std::vector<cv::Vec3b> colormap =
           save_image_original_color(*batch_path, cropped_Batch);
