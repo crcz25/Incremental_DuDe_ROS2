@@ -260,6 +260,8 @@ TEST_F(IncDudeNode, H02_SaveServiceReportsAWriteFailure) {
   ASSERT_TRUE(response) << "no ~/save service";
   EXPECT_FALSE(response->success);
   EXPECT_NE(response->message.find("write"), std::string::npos) << response->message;
+  // Without its Batch image, no Inc image is written either.
+  EXPECT_FALSE(fs::exists(output_dir_ / "h02_blocked_Inc.png"));
 }
 
 // H-02: a message on the shared 'chatter' topic no longer saves anything.

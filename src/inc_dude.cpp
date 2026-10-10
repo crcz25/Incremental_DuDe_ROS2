@@ -436,13 +436,16 @@ public:
     if (true) {
       std::vector<cv::Vec3b> colormap =
           save_image_original_color(*batch_path, cropped_Batch, &batch_written);
-      inc_written = save_decomposed_image_color(*inc_path, cropped_Inc,
+      // No Inc image without its Batch image: a failed save writes nothing.
+      inc_written = batch_written &&
+                    save_decomposed_image_color(*inc_path, cropped_Inc,
                                                 colormap, Batch_Inc_map);
     } else {
       std::vector<cv::Vec3b> colormap =
           save_image_original_color(*inc_path, image2save_Inc, &inc_written);
-      batch_written = save_decomposed_image_color(
-          *batch_path, Batch_segmentated, colormap, Batch_Inc_map);
+      batch_written = inc_written &&
+                      save_decomposed_image_color(*batch_path, Batch_segmentated,
+                                                  colormap, Batch_Inc_map);
     }
     if (!batch_written || !inc_written) {
       message = "cannot write " + (batch_written ? *inc_path : *batch_path);
