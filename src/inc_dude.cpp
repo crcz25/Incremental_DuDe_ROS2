@@ -23,6 +23,7 @@
 #include "inc_dude/region_msg_conversion.hpp"
 #include "inc_dude/region_tracker.hpp"
 #include "inc_dude/save_path.hpp"
+#include "inc_dude/timing_stats.hpp"
 
 #include <chrono>
 #include <functional>
@@ -48,7 +49,8 @@ class ROS_handler : public rclcpp::Node {
 
   cv::Mat image2save_clean, image2save_black, image2save_Inc;
 
-  std::vector<double> clean_time_vector, decomp_time_vector, paint_time_vector,
+  // L-05: fixed-memory statistics of the per-map times.
+  inc_dude::TimingStats clean_time_vector, decomp_time_vector, paint_time_vector,
       complete_time_vector;
 
   std::string segmentation_output_directory_;
@@ -296,22 +298,20 @@ public:
           "Time: total %.0f, Classified: occ %.1f, Decomp %.1f, Draw %.1f \n",
           whole_time, occupancy_time, decompose_time, drawPublish_time);
 
-      clean_time_vector.push_back(occupancy_time);
-      decomp_time_vector.push_back(decompose_time);
-      paint_time_vector.push_back(drawPublish_time);
-      complete_time_vector.push_back(whole_time);
+      clean_time_vector.add(occupancy_time);
+      decomp_time_vector.add(decompose_time);
+      paint_time_vector.add(drawPublish_time);
+      complete_time_vector.add(whole_time);
 
-      cout << "Time Vector size " << clean_time_vector.size() << endl;
+      cout << "Time Vector size " << clean_time_vector.count() << endl;
     }
 
     //*
-    double cum_time = 0, cum_quad_time = 0;
-    for (int i = 0; i < clean_time_vector.size(); i++) {
-      cum_time += complete_time_vector[i];
-      cum_quad_time += complete_time_vector[i] * complete_time_vector[i];
-    }
-    float avg_time = cum_time / clean_time_vector.size();
-    float avg_quad_time = cum_quad_time / clean_time_vector.size();
+    double cum_time = complete_time_vector.sum(),
+           cum_quad_time = complete_time_vector.sumSquares();
+    const auto maps = static_cast<double>(clean_time_vector.count());
+    float avg_time = static_cast<float>(cum_time / maps);
+    float avg_quad_time = static_cast<float>(cum_quad_time / maps);
     float std_time = sqrt(avg_quad_time - avg_time * avg_time);
 
     std::cout << "Number of Regions " << Stable.Region_contour.size()

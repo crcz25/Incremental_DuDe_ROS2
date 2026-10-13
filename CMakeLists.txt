@@ -205,6 +205,9 @@ if(BUILD_TESTING)
   target_link_libraries(test_region_tracking inc_dude_tracking)
 
   # Names and paths of the images the save trigger writes (H-01).
+  ament_add_gtest(test_timing_stats test/test_timing_stats.cpp)
+  target_include_directories(test_timing_stats PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
   ament_add_gtest(test_save_path test/test_save_path.cpp)
   target_link_libraries(test_save_path inc_dude_save_path)
 
