@@ -9,11 +9,21 @@ DuDe_OpenCV_wrapper::DuDe_OpenCV_wrapper() {
 }
 
 DuDe_OpenCV_wrapper::~DuDe_OpenCV_wrapper() {
+  // H-03: the skeleton points into the pieces; release it first.
+  draw_decoration.se.destroy();
   for (int i = 0; i < finalPolygonPieces.size(); i++) {
     c_polygon *current_polygon = finalPolygonPieces[i];
+    if (current_polygon == decomposed_polygon.get()) {
+      continue;  // no cut: the piece is the input copy, released below
+    }
     current_polygon->destroy();
+    // H-03: the piece itself (DuDe allocated it), not only its vertices.
+    std::unique_ptr<c_polygon> piece(current_polygon);
   }
   finalPolygonPieces.clear();
+  if (decomposed_polygon) {
+    decomposed_polygon->destroy();  // its vertices; the object goes with the member
+  }
   //	dude.clear();
 
   for (int i = 0; i < draw_decoration.allFeaturePMs.size(); i++) {
@@ -27,8 +37,6 @@ DuDe_OpenCV_wrapper::~DuDe_OpenCV_wrapper() {
     //		current_diagonal->destroy();
   }
   draw_decoration.allAccumulatedCuts.clear();
-
-  draw_decoration.se.destroy();
 }
 
 ///////////////////////////////////
@@ -151,12 +159,19 @@ Blur........ "; Image_in = Median_Image & ~black_image; cout << "And........ ";
   //	extract_graph();
   //	print_graph();
 
+  // H-03: the input polygon's vertices (insert_contour_to_poly) are shared
+  // only with DuDe's global P, which Dual_decompose set: clear P, then free
+  // them.
+  getP() = c_polygon();
+  polygons.destroy();
+
   return resize_rect;
 }
 
 //////////////////////////////////////////////////////////////
 void DuDe_OpenCV_wrapper::Dual_decompose(c_polygon &polygons) {
-  c_polygon *p1 = new c_polygon();
+  decomposed_polygon = std::make_unique<c_polygon>();
+  c_polygon *p1 = decomposed_polygon.get();
   p1->copy(polygons);
   dude.build(*p1, g_tau, true);
   getP() = polygons;
@@ -186,8 +201,8 @@ void DuDe_OpenCV_wrapper::Dual_decompose(c_polygon &polygons) {
 //////////////////////
 void DuDe_OpenCV_wrapper::prepare_skeleton() {
   // prepare for extract skeletons
-  ExtracSkeleton *m_ES = ES_Factory::create_ES("PA");
-  draw_decoration.se.setExtracSkeleton(m_ES);
+  skeleton_extractor = std::make_unique<ES_PA>();  // ES_Factory's "PA"
+  draw_decoration.se.setExtracSkeleton(skeleton_extractor.get());
   draw_decoration.se.setQualityMeasure(NULL);
   draw_decoration.se.begin();
 }

@@ -284,3 +284,37 @@ TEST_F(IncDudeNode, H02_ChatterNoLongerTriggersASave) {
   EXPECT_FALSE(fs::exists(output_dir_ / "h02_chatter_Batch.png"));
   EXPECT_FALSE(fs::exists(output_dir_ / "h02_chatter_Inc.png"));
 }
+
+// H-03: DuDe_OpenCV_wrapper releases what it allocates. One fixed map (two
+// rooms joined by a corridor) decomposed 50 times, each by a new wrapper as
+// Incremental_Decomposer uses them: every run gives the same contours, and
+// in the sanitizer build LeakSanitizer reports nothing for this test alone.
+void expectRepeatableDecomposition(const cv::Mat &image, size_t min_pieces) {
+  std::vector<std::vector<cv::Point>> first;
+  for (int run = 0; run < 50; ++run) {
+    DuDe_OpenCV_wrapper wrapper;
+    wrapper.set_pixel_Tau(20.0f);
+    wrapper.Decomposer(image.clone());
+    if (run == 0) {
+      first = wrapper.Decomposed_contours;
+      ASSERT_GE(first.size(), min_pieces);
+    } else {
+      ASSERT_EQ(wrapper.Decomposed_contours, first) << "run " << run;
+    }
+  }
+}
+
+TEST(DudeWrapper, H03_RepeatedDecompositionsGiveTheSameContours) {
+  cv::Mat image = cv::Mat::zeros(120, 160, CV_8UC1);
+  cv::rectangle(image, cv::Point(10, 10), cv::Point(70, 110), 255, -1);
+  cv::rectangle(image, cv::Point(90, 10), cv::Point(150, 110), 255, -1);
+  cv::rectangle(image, cv::Point(70, 50), cv::Point(90, 70), 255, -1);
+  expectRepeatableDecomposition(image, 2);  // the two rooms at least
+}
+
+// H-03: one room, no cut: the only piece is the wrapper's copy of the input.
+TEST(DudeWrapper, H03_ARoomWithoutCutsIsReleasedOnce) {
+  cv::Mat image = cv::Mat::zeros(120, 160, CV_8UC1);
+  cv::rectangle(image, cv::Point(10, 10), cv::Point(150, 110), 255, -1);
+  expectRepeatableDecomposition(image, 1);
+}

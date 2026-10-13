@@ -1,3 +1,5 @@
+#include <memory>
+
 // openCV
 #include <opencv2/imgproc/imgproc.hpp>
 
@@ -34,6 +36,14 @@ public:
   Draw_Decoration draw_decoration;
   vector<c_polygon *> finalPolygonPieces; // the result polygons, they can be
                                           // exported as individual files
+  // H-03: what the wrapper allocates for DuDe, released with it. The copy
+  // of the input that dude.build() and iterativeDecompose() work on (the
+  // skeleton in draw_decoration.se points into it; the destructor frees its
+  // vertices with destroy()), and the skeleton extractor
+  // (ES_Factory::create_ES("PA") is new ES_PA, whose base class has no
+  // virtual destructor).
+  std::unique_ptr<c_polygon> decomposed_polygon;
+  std::unique_ptr<ES_PA> skeleton_extractor;
   //////
 
   std::vector<cv::Point> Parent_contour;
