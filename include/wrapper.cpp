@@ -1,5 +1,19 @@
 #include "wrapper.hpp"
 
+// P4-N8: DuDe's global decoration (main.h). iterativeDecompose and
+// updateMINMAXConcavity append to its allFeaturePMs (pointers into the
+// decomposed polygons) and allFeatureConcavities on every decomposition;
+// only DuDe's drawing code reads them, and it is not built (GL_RENDERING
+// and PS_RENDERING are 0). They are cleared around each decomposition and
+// with the wrapper, so they neither grow nor keep pointers to freed
+// vertices. The member draw_decoration below hides this global.
+extern Draw_Decoration draw_decoration;
+
+static void clearGlobalDecoration() {
+  ::draw_decoration.allFeaturePMs.clear();
+  ::draw_decoration.allFeatureConcavities.clear();
+}
+
 DuDe_OpenCV_wrapper::DuDe_OpenCV_wrapper() {
   Area_threshold = 5;
   dude = c_dude();
@@ -37,6 +51,7 @@ DuDe_OpenCV_wrapper::~DuDe_OpenCV_wrapper() {
     //		current_diagonal->destroy();
   }
   draw_decoration.allAccumulatedCuts.clear();
+  clearGlobalDecoration();  // P4-N8
 }
 
 ///////////////////////////////////
@@ -170,6 +185,7 @@ Blur........ "; Image_in = Median_Image & ~black_image; cout << "And........ ";
 
 //////////////////////////////////////////////////////////////
 void DuDe_OpenCV_wrapper::Dual_decompose(c_polygon &polygons) {
+  clearGlobalDecoration();  // P4-N8
   decomposed_polygon = std::make_unique<c_polygon>();
   c_polygon *p1 = decomposed_polygon.get();
   p1->copy(polygons);
@@ -196,6 +212,7 @@ void DuDe_OpenCV_wrapper::Dual_decompose(c_polygon &polygons) {
   //"finalPolygonPieces.size() " << finalPolygonPieces.size() <<endl;
 
   estimate_COM_R_Box(); // compute the bounding box of all geometries
+  clearGlobalDecoration();  // P4-N8
 }
 
 //////////////////////

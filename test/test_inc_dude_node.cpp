@@ -328,6 +328,28 @@ TEST(DudeWrapper, H03_ARoomWithoutCutsIsReleasedOnce) {
   expectRepeatableDecomposition(image, 1);
 }
 
+// P4-N8 (D5): DuDe appends to its global draw_decoration (allFeaturePMs,
+// pointers into the decomposed polygons, and allFeatureConcavities) on
+// every decomposition. After a wrapper is destroyed the global holds
+// nothing, however many decompositions ran.
+extern Draw_Decoration draw_decoration;  // DuDe's global (main.h)
+
+TEST(DudeWrapper, D5_TheGlobalDecorationDoesNotGrow) {
+  cv::Mat image = cv::Mat::zeros(120, 160, CV_8UC1);
+  cv::rectangle(image, cv::Point(10, 10), cv::Point(70, 110), 255, -1);
+  cv::rectangle(image, cv::Point(90, 10), cv::Point(150, 110), 255, -1);
+  cv::rectangle(image, cv::Point(70, 50), cv::Point(90, 70), 255, -1);
+  for (int run = 0; run < 20; ++run) {
+    {
+      DuDe_OpenCV_wrapper wrapper;
+      wrapper.set_pixel_Tau(20.0f);
+      wrapper.Decomposer(image.clone());
+    }
+    ASSERT_EQ(::draw_decoration.allFeaturePMs.size(), 0u) << "run " << run;
+    ASSERT_EQ(::draw_decoration.allFeatureConcavities.size(), 0u) << "run " << run;
+  }
+}
+
 // DuDe reference output: the full result of DuDe for fixed maps (the input
 // contour, pocket minima, cut sets, CDT diagonals, cuts, accumulated cuts,
 // pieces and contours), every double in hexfloat, compared exactly with
