@@ -69,6 +69,9 @@ public:
   // add by Guilin
   void removeItem(se_m *tm);
   map<c_polygon *, se_m *> ply2MouthMap;
+  // PATCH(dude-6): polygons that decomposePolygonUsingCuts split and cleared
+  // (keys of ply2MouthMap, cd of a replaced se_m); freed at the end of destroy()
+  vector<c_polygon *> splitPolygons;
 
   void addHoleDiagBranch(ply_vertex *v1, ply_vertex *v2, se_m *m);
 };

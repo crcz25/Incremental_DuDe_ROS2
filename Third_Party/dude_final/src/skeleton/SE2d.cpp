@@ -299,4 +299,9 @@ void SE2d::destroy() {
   }
   for (set<se_mouth *>::iterator i = mouths.begin(); i != mouths.end(); i++)
     delete *i; // PATCH(dude-4e)
+  // PATCH(dude-6): after the map and the se_m that point at them; each once
+  set<c_polygon *> split(splitPolygons.begin(), splitPolygons.end());
+  for (set<c_polygon *>::iterator i = split.begin(); i != split.end(); i++)
+    delete *i;
+  splitPolygons.clear();
 }

@@ -120,6 +120,9 @@ void c_dude_use::decomposePolygonUsingCuts(c_polygon &cpolygon,
       todo_list.push_back(psubPoly2);
       initPlygon->clear();
       // delete initPlygon;
+      // PATCH(dude-6): freed in SE2d::destroy(), except the caller's polygon
+      if (bExtractSkeleton && initPlygon != se.initPolygon)
+        se.splitPolygons.push_back(initPlygon);
 
       if (!b)
         break;
