@@ -129,6 +129,11 @@ public:
   // vertices are freed with this c_dude (hole_PMs may still point at them)
   list<c_ply> m_ignored_holes;
 
+  // PATCH(dude-5): the BPCs of the c_dude that decompose_hole builds on each
+  // hole; they set concavity_bpc on the hole's vertices, which
+  // is_bridge_breaking reads later. Freed in ~c_dude.
+  list<c_BPC *> m_hole_bpcs;
+
   // combine the extra-boundary pocket minimums and hole minimums
   void combineMinimumPnts(list<ply_vertex *> &extraPMs,
                           list<ply_vertex *> &holePMs,

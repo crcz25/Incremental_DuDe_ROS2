@@ -36,6 +36,11 @@ c_dude::~c_dude() {
     delete current;
   }
   m_bpcs.clear();
+  for (list<c_BPC *>::iterator iter = m_hole_bpcs.begin();
+       iter != m_hole_bpcs.end(); iter++)
+    delete *iter; // PATCH(dude-5); the vertices are not read here: the
+                  // wrapper frees the input polygon before its c_dude
+  m_hole_bpcs.clear();
   //////
   m_reduced_P.clear();
   // PATCH(dude-4d): the simplified polygon's vertices are this c_dude's own
@@ -649,6 +654,7 @@ void c_dude::decompose_hole(c_ply &hole, list<ply_vertex *> &tmpholePMs,
   c_dude dude;
   dude.build(polygon, m_tau * HOLECONCAVITYRATIO, false);
   hole.reverseType();
+  m_hole_bpcs.splice(m_hole_bpcs.end(), dude.m_bpcs); // PATCH(dude-5)
 
   // get the final cut for this hole
   const vector<c_diagonal> &holecuts = dude.getFinalCuts();

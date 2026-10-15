@@ -678,9 +678,9 @@ cv::Mat freiburg52FreeSpace() {
   return free_space;
 }
 
-// DP-1 / DP-10: Freiburg52 at tau 20 px. Unpatched DuDe (and DuDe with the
-// round 1 patches) reads a freed BPC in c_dude::is_bridge_breaking on this
-// map. Its own golden files (not the eight maps').
+// DP-1 / DP-10: Freiburg52 at tau 20 px. DuDe without patches/dude/ dude-5
+// read a freed BPC in c_dude::is_bridge_breaking on this map. Its own golden
+// files (not the eight maps').
 Result freiburg52Tau20() {
   return decompose("Freiburg52_scan_tau20", freiburg52FreeSpace(), 20.0f);
 }
@@ -1052,7 +1052,7 @@ TEST(DudeReference, ThePiecesCoverTheFreeSpace) {
 
 // DP-1: Freiburg52 at tau 20 px, canonical form and area check, against
 // test/golden/dude_decomposition_reference_tau20.txt.
-TEST(DudeReference, DISABLED_TheTau20DecompositionIsUnchanged) {
+TEST(DudeReference, TheTau20DecompositionIsUnchanged) {
   const dude_reference::Result r = dude_reference::freiburg52Tau20();
   dude_reference::expectCoverage(r);
   dude_reference::expectGolden(dude_reference::text(r),
@@ -1061,8 +1061,86 @@ TEST(DudeReference, DISABLED_TheTau20DecompositionIsUnchanged) {
 
 // DP-1: the exact result of Freiburg52 at tau 20 px, also after other
 // decompositions or allocations (DUDE_REFERENCE_WARMUP, _PREALLOC).
-TEST(DudeReference, DISABLED_TheTau20ExactDecompositionIsUnchanged) {
+TEST(DudeReference, TheTau20ExactDecompositionIsUnchanged) {
   dude_reference::applyHistoryHooks();
   dude_reference::expectGolden(dude_reference::exactText(dude_reference::freiburg52Tau20()),
                                "dude_decomposition_exact_reference_tau20.txt");
+}
+
+namespace dude_reference {
+
+// The input polygon of DuDe_OpenCV_wrapper::Decomposer for `image` (its
+// steps): the largest contour and its children above Area_threshold.
+c_polygon inputPolygon(const cv::Mat &image) {
+  std::vector<std::vector<cv::Point>> contours;
+  std::vector<cv::Vec4i> hierarchy;
+  cv::findContours(image.clone(), contours, hierarchy, cv::RETR_TREE,
+                   cv::CHAIN_APPROX_SIMPLE);
+  int big = 0;
+  float big_area = cv::contourArea(contours.at(0));
+  for (int i = 0; hierarchy[i][0] != -1;) {
+    i = hierarchy[i][0];
+    const float area = cv::contourArea(contours[i]);
+    if (area > big_area) {
+      big_area = area;
+      big = i;
+    }
+  }
+  DuDe_OpenCV_wrapper wrapper;  // for insert_contour_to_poly
+  c_polygon polygon;
+  c_ply out(c_ply::POUT);
+  wrapper.insert_contour_to_poly(contours[big], out);
+  polygon.push_back(out);
+  for (int c = hierarchy[big][2]; c != -1; c = hierarchy[c][0]) {
+    const float area = cv::contourArea(contours[c]);
+    if (area > wrapper.Area_threshold) {
+      c_ply in(c_ply::PIN);
+      wrapper.insert_contour_to_poly(contours[c], in);
+      polygon.push_back(in);
+    }
+  }
+  return polygon;
+}
+
+void collectBpcs(const std::list<c_BPC *> &bpcs, std::set<const c_BPC *> &out) {
+  for (const c_BPC *bpc : bpcs) {
+    out.insert(bpc);
+    collectBpcs(bpc->getKids(), out);
+  }
+}
+
+}  // namespace dude_reference
+
+// DP-1: right after c_dude::build (before iterativeDecompose resets the
+// vertices), every concavity_bpc of the input vertices is null or a BPC that
+// is still alive: one of the c_dude's own, one of its holes' (m_hole_bpcs,
+// patches/dude/ dude-5) or a kid of one. Before dude-5 the holes' BPCs were
+// freed when decompose_hole returned.
+TEST(DudeReference, NoVertexPointsAtAFreedBpcAfterBuild) {
+  size_t at_hole_bpcs = 0;
+  for (const float tau : {20.0f, 54.0f}) {
+    c_polygon polygon = dude_reference::inputPolygon(dude_reference::freiburg52FreeSpace());
+    {
+      c_dude dude;
+      dude.build(polygon, tau, true);
+      std::set<const c_BPC *> alive, of_holes;
+      dude_reference::collectBpcs(dude.m_bpcs, alive);
+      dude_reference::collectBpcs(dude.m_hole_bpcs, of_holes);
+      alive.insert(of_holes.begin(), of_holes.end());
+      for (c_ply &ply : polygon) {
+        ply_vertex *v = ply.getHead();
+        do {
+          const c_BPC *bpc = v->getExtra().concavity_bpc;
+          if (bpc != nullptr) {
+            EXPECT_EQ(alive.count(bpc), 1u) << "tau " << tau;
+            at_hole_bpcs += of_holes.count(bpc);
+          }
+          v = v->getNext();
+        } while (v != ply.getHead());
+      }
+    }  // the c_dude (and the holes it dropped) first, then the vertices
+    polygon.destroy();
+  }
+  std::cout << "vertices pointing at a hole's BPC: " << at_hole_bpcs << std::endl;
+  EXPECT_GT(at_hole_bpcs, 0u);  // the check covers the holes' BPCs
 }
