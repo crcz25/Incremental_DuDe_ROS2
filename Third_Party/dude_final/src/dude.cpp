@@ -926,6 +926,9 @@ void c_dude::decompose_bridge(c_BPC *bpc) {
 
   } // end j
   delete dude2;
+  // PATCH(dude-4c): the copy of the pocket (create_ply_from_bridge, new
+  // vertices; the kids use the original ones through vmap) was never freed
+  ply.destroy();
 }
 
 //
