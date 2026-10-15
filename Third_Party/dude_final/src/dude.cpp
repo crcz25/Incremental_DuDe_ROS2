@@ -823,6 +823,8 @@ void c_dude::decompose_hole(c_ply &hole, list<ply_vertex *> &tmpholePMs,
 
     findFeatAndConcavityForComplexHole(hole, tmpcutPoints, tmpholePMs,
                                        tmpholeFeatPnts, m_tau, rootcutTmp);
+    delete rootcutTmp; // PATCH(dude-7): the cut tree (~HoleDiagonal frees
+                       // the children; each is in one childHoleDiags)
   }
 }
 

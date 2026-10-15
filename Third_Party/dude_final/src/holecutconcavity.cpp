@@ -181,6 +181,8 @@ HoleDiagonal *getCutDiagRoot(const vector<c_diagonal> &holecuts) {
     root1->childHoleDiags.insert(root1->childHoleDiags.end(),
                                  root2->childHoleDiags.begin(),
                                  root2->childHoleDiags.end());
+    root2->childHoleDiags.clear(); // PATCH(dude-7): root1 owns them now;
+    delete root2;                  // root2 itself was never freed
     int tmpD = computeHierarchyDepth(root1);
     if (tmpD < tmpBestDepth) {
       tmpBestDepth = tmpD;
