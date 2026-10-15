@@ -1,0 +1,61 @@
+From cd3a0d3decb543150dd4124944843d6af4340dc9 Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 13:53:02 +0000
+Subject: [PATCH] E7: DuDe frees the hole-cut tree of decompose_hole (DP-11)
+
+getCutDiagRoot (holecutconcavity.cpp) builds a candidate tree per cut:
+root1 for the cuts on one side, root2 for the other, and moves root2's
+children to root1. root2 was never deleted, and decompose_hole never
+deleted the returned root (the whole tree). test_dude_reference leaked
+528 B on Freiburg52 at tau 20 px; the evaluation maps at tau 20 px leaked
+up to 6.7 KB.
+
+Ownership: ~HoleDiagonal deletes its children recursively, and every node
+is in exactly one childHoleDiags (insertToRootTree moves a node, the old
+parent keeps only the children whose initParent is itself).
+tmpChildHoleDiags, initParent and tempParent do not own.
+
+PATCH(dude-7): getCutDiagRoot clears root2's child list (root1 owns them)
+and deletes root2 as a node only; decompose_hole deletes the root after
+findFeatAndConcavityForComplexHole, its last user (holeDiagVec is local,
+draw_decoration.holecutRoot copies only the end points).
+
+test_dude_reference: no leak in the sanitizer build. Golden files
+unchanged; the layout matrix gives identical exact dumps in the normal and
+the sanitizer build, with no memory error and no leak.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/dude.cpp             | 2 ++
+ src/holecutconcavity.cpp | 2 ++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/src/dude.cpp b/src/dude.cpp
+index 2daac73..fad4a68 100644
+--- a/src/dude.cpp
++++ b/src/dude.cpp
+@@ -823,6 +823,8 @@ void c_dude::decompose_hole(c_ply &hole, list<ply_vertex *> &tmpholePMs,
+ 
+     findFeatAndConcavityForComplexHole(hole, tmpcutPoints, tmpholePMs,
+                                        tmpholeFeatPnts, m_tau, rootcutTmp);
++    delete rootcutTmp; // PATCH(dude-7): the cut tree (~HoleDiagonal frees
++                       // the children; each is in one childHoleDiags)
+   }
+ }
+ 
+diff --git a/src/holecutconcavity.cpp b/src/holecutconcavity.cpp
+index d824336..8e8bf39 100644
+--- a/src/holecutconcavity.cpp
++++ b/src/holecutconcavity.cpp
+@@ -181,6 +181,8 @@ HoleDiagonal *getCutDiagRoot(const vector<c_diagonal> &holecuts) {
+     root1->childHoleDiags.insert(root1->childHoleDiags.end(),
+                                  root2->childHoleDiags.begin(),
+                                  root2->childHoleDiags.end());
++    root2->childHoleDiags.clear(); // PATCH(dude-7): root1 owns them now;
++    delete root2;                  // root2 itself was never freed
+     int tmpD = computeHierarchyDepth(root1);
+     if (tmpD < tmpBestDepth) {
+       tmpBestDepth = tmpD;
+-- 
+2.34.1
+

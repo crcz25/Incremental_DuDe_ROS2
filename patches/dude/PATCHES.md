@@ -24,6 +24,17 @@ DuDe's output depends on the heap layout.
   dude-0 and dude-0b make the result independent of both orders. The
   geometry of the reference maps equals that of unpatched DuDe; the order
   of some lists and the orientation of some segments differ (by design).
+- **Expected difference from unpatched DuDe (DP-13, accepted 2026-10-15):**
+  DuDe's geometry depends on the orientation of the CDT edges on some
+  maps. On the evaluation maps:
+  - at τ 54 px, 5 of 40 inputs differ from every unpatched layout
+    (`Freiburg101_scan` and its furniture version, `lab_a_scan`,
+    `lab_b_scan_furnitures`, `lab_d_scan_furnitures`);
+  - at τ 50 px, none differs.
+
+  The changes are a few cuts or diagonals and small region changes (see
+  `docs/fixes/dude_round2_report.md`, E4). The project owner chose to keep
+  dude-0b: the result is the same in every process.
 - **Marker:** each change carries a comment `PATCH(dude-<n>)`.
 
 ## How to apply
@@ -41,12 +52,15 @@ done
 ```
 
 Checked on 2026-10-15 against the unpatched DuDe of this repository
-(commit f74508b):
+(commit f74508b), in a copy outside any git repository:
 
 - 0001 applies alone;
 - 0002 applies after it;
 - 0003 to 0011 apply after both;
-- the result equals the patched DuDe byte for byte.
+- 0012 to 0015 (round 2) apply after 0001 to 0011, in this order;
+- the result of 0001 to 0015 equals the patched DuDe byte for byte, and
+  `skeleton/SE2d.cpp`, `skeleton/SE2d.h`, `dude_use.cpp` and
+  `holecutconcavity.cpp` keep their CRLF line endings.
 
 Run it outside any other git repository: inside one, `git apply` reads the
 paths relative to that repository's root and silently skips them.
@@ -74,25 +88,58 @@ not depend on the order.
 | 0008 | D4c | Free the pocket copy of each bridge | Indirect: `c_ply::addVertex` ← `c_dude::create_ply_from_bridge` ← `decompose_bridge` | 935,200 → 384,000 (551,200) | `decompose_bridge` destroys `ply` after `delete dude2`; the kids use the original vertices through `vmap`. | `PATCH(dude-4c)` | H-03 test, DudeReference |
 | 0009 | D4d | A c_dude frees its simplified polygon | Indirect: `c_ply::addVertex` ← `c_dude::buildSimpliedPly` ← `create_simplified_and_reduced` | 384,000 → 6,800 (377,200) | `~c_dude` destroys `m_simpilifed_P` (`m_reduced_P` shares the input's vertices: only cleared). A simplified ply with fewer than 3 vertices is destroyed where it is dropped. | `PATCH(dude-4d)` | H-03 test, DudeReference; whole `test_inc_dude_node` and `test_evaluation_node` in the sanitizer build |
 | 0010 | D4e | The skeleton extractor frees the mouths | Indirect: `newMouth` ← `updateMouth` ← `decomposePolygonUsingCuts` | 6,800 → 0 | `SE2d::destroy()` collects the mouths of every se_m it frees and deletes each once, after the se_m. | `PATCH(dude-4e)` | H-03 test (no leak left) |
-| 0011 | D4f | A c_dude frees the holes it removed as ignorable | `c_ply::copy` ← `c_polygon::copy` ← `Dual_decompose` (the vertices of a hole that `buildBPC` erased) | `test_evaluation_node`: 7,360 → 0 (5 holes × 8 vertices) | `c_dude` keeps the erased ply in `m_ignored_holes` (its `hole_PMs` may point at it) and destroys it in `~c_dude`. | `PATCH(dude-4f)` | whole `test_evaluation_node` in the sanitizer build |
+| 0011 | D4f | A c_dude frees the holes it removed as ignorable | `c_ply::copy` ← `c_polygon::copy` ← `Dual_decompose` (the vertices of a hole that `buildBPC` erased) | `test_evaluation_node`: 7,360 → 0 (5 holes × 8 vertices) | `c_dude` keeps the erased ply in `m_ignored_holes` and destroys it in `~c_dude` (`P.erase` drops it from P, so nothing else frees its vertices; reason corrected by 0015). | `PATCH(dude-4f)` | whole `test_evaluation_node` in the sanitizer build |
+| 0012 | E1 (DP-1) | A c_dude keeps the BPCs of its holes until it ends | Use after free, not a leak: READ in `c_BPC::getSource1` ← `c_dude::is_bridge_breaking` ← `isDiagonal` ← `c_cdt::build`, freed by `~c_dude` ← `decompose_hole` ← `buildBPC_from_hole` (Freiburg52 at τ 20 px; all 19 / 24 unpatched crashes on the evaluation maps at τ 54 / 50 px) | — | The pointer: `concavity_bpc` of the hole vertices, set by the BPCs of `decompose_hole`'s local `c_dude`. `decompose_hole` moves those BPCs (and their kids) to the outer `c_dude`'s new `m_hole_bpcs`; `~c_dude` deletes them. | `PATCH(dude-5)` | `TheTau20DecompositionIsUnchanged`, `TheTau20ExactDecompositionIsUnchanged`, `NoVertexPointsAtAFreedBpcAfterBuild` (sanitizer build) |
+| 0013 | E2 (DP-6) | Free the polygons that decomposePolygonUsingCuts split | Direct: `c_dude_use::decomposePolygonUsingCuts` ← `iterativeDecompose` ← `Dual_decompose` (+ the `c_polygon` vectors) | `test_dude_reference`: 1,287,552 → 0 (from these polygons) | `SE2d::splitPolygons` (new) collects each polygon an out-out cut cleared, except the caller's (`se.initPolygon`); freed at the end of `SE2d::destroy()`, after `ply2MouthMap` is cleared and after the se_m and mouths. | `PATCH(dude-6)` | `test_dude_reference` under LeakSanitizer; peak RSS unchanged |
+| 0014 | E7 (DP-11) | Free the hole-cut tree of decompose_hole | Direct: `getCutDiagRoot` ← `decompose_hole` (+ `buildHoleDiagonalHierarchy`, vectors) | `test_dude_reference`: 528 → 0; evaluation maps at τ 20 px up to 6.7 KB → 0 | `getCutDiagRoot` clears `root2`'s child list (root1 owns them) and deletes `root2` as a node; `decompose_hole` deletes the returned root (`~HoleDiagonal` frees the children; each node is in exactly one `childHoleDiags`). | `PATCH(dude-7)` | `test_dude_reference` under LeakSanitizer |
+| 0015 | E6 (DP-9) | Correct the D4f comment | — | — | Comment only (`dude.h`). | `PATCH(dude-4f)` (kept) | — |
 
-Correction to 0011: its comment says `hole_PMs` may still point at the
+Correction to 0011: its comment said `hole_PMs` may still point at the
 erased hole. In fact `decompose_hole` returns before it adds anything to
-`hole_PMs` for an ignorable hole (code review). Keeping the hole until
-`~c_dude` is still correct; the comment was not changed, to stay under the
-150-line limit of the patch.
+`hole_PMs` for an ignorable hole. 0015 (round 2) corrects the comment.
 
-Not fixed: intermediate `c_polygon` objects in
-`c_dude_use::decomposePolygonUsingCuts` (`// delete initPlygon;`, commented
-out upstream). For the eight reference maps, one pass leaks 26,824 B in 67
-allocations. No leak remains for the H-03 map, the node tests or the
-evaluation tests. Their owner is not clear:
+## Deviations in round 2 from the planned fixes
 
-- the first such polygon is the wrapper's copy of the input (owned by
-  `DuDe_OpenCV_wrapper::decomposed_polygon`);
-- the others are keys of `SE2d::ply2MouthMap` and the `cd` of a se_m.
+- **0012 (E1), option B without the reset in the outer destructor.** The
+  plan was to keep the hole BPCs in the outer `c_dude` and to reset the
+  vertices' `concavity_bpc` in its destructor before freeing the BPCs.
+  That reset is itself a heap-use-after-free:
+  - `~DuDe_OpenCV_wrapper` frees the input polygon's vertices
+    (`decomposed_polygon->destroy()`) in its body, before its `c_dude`
+    member is destroyed.
+  - A variant with the reset showed it under ASan: WRITE in
+    `c_dude::~c_dude` ← `~DuDe_OpenCV_wrapper`, freed by
+    `c_ply::destroy` ← `c_polygon::destroy` ← `~DuDe_OpenCV_wrapper`.
 
-Freeing them would let addresses be reused as map keys.
+  So `~c_dude` frees the BPCs without touching vertices. This is safe
+  because every vertex that outlives a `c_dude` (the sub-polygons of
+  `iterativeDecompose`) is reset by `reInitializePolygon` first.
+  `~c_BPC` reads no vertex. Option A (null the pointers in
+  `decompose_hole`) gave identical dumps on all reference maps.
+- **0013 (E2), the owner is `SE2d`.** The plan suggested a `c_dude_use` or
+  the wrapper.
+  - The `c_dude_use` objects are locals of `iterativeDecompose` and do not
+    outlive `SE2d`.
+  - The wrapper cannot see the split polygons without a change to DuDe's
+    interface.
+  - `SE2d` is passed to `decomposePolygonUsingCuts`, holds the map whose
+    keys they are, and is destroyed by the wrapper after the result
+    coordinates are copied.
+  - Freeing them at the end of `SE2d::destroy()`, after the map is
+    cleared, removes the address-reuse risk by timing.
+
+## Round 2 line count
+
+Round 2 changes 30 lines of DuDe (0012: 11, 0013: 11, 0014: 4, 0015: 4).
+Round 1 changed 147 lines. The net difference of the patched DuDe from
+the unpatched one is +161 / −12.
+
+## Not DuDe patches
+
+- `include/wrapper.cpp` clears DuDe's global `g_points` (`poly_approx.cpp`)
+  with the decoration (E3, DP-5; first-party, no DuDe change).
+- `PERMISSION.md` records the origin of DuDe and the permission to modify
+  it.
 
 The first-party side (not a DuDe patch): `include/wrapper.cpp` clears
 DuDe's global `draw_decoration` (`allFeaturePMs`, `allFeatureConcavities`)

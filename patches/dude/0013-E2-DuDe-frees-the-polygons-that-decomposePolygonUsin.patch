@@ -1,0 +1,78 @@
+From c060c37a475a831766a3fe056e8d2cae4f93b4c3 Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 10:58:58 +0000
+Subject: [PATCH] E2: DuDe frees the polygons that decomposePolygonUsingCuts
+ split (DP-6)
+
+c_dude_use::decomposePolygonUsingCuts clears each polygon an out-out cut
+splits ("initPlygon->clear(); // delete initPlygon;", commented out
+upstream), so every split polygon leaked: test_dude_reference leaked
+1,287,552 B in the sanitizer build.
+
+PATCH(dude-6): the split polygon is collected in SE2d::splitPolygons and
+freed at the end of SE2d::destroy(), after ply2MouthMap is cleared and
+after the se_m (whose cd may point at it) and the mouths are freed (the
+D3 and D4e releases keep their order). No address can be reused while it
+is still a map key. The caller's polygon (se.initPolygon: the wrapper's
+decomposed_polygon, owned by its unique_ptr) is not collected; without
+skeleton extraction nothing is collected (SE2d::initPolygon is not
+initialised then). A cleared polygon owns no vertex: its vertices moved
+to the sub-polygons.
+
+test_dude_reference: no leak from these polygons is left. 528 B remain,
+from getCutDiagRoot on the tau 20 px map (a separate, new finding). The
+golden files are unchanged; the layout matrix gives identical exact
+dumps in the normal and the sanitizer build, with no memory error.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/dude_use.cpp      | 3 +++
+ src/skeleton/SE2d.cpp | 5 +++++
+ src/skeleton/SE2d.h   | 3 +++
+ 3 files changed, 11 insertions(+)
+
+diff --git a/src/dude_use.cpp b/src/dude_use.cpp
+index d26a3c9..35f3ff7 100644
+--- a/src/dude_use.cpp
++++ b/src/dude_use.cpp
+@@ -120,6 +120,9 @@ void c_dude_use::decomposePolygonUsingCuts(c_polygon &cpolygon,
+       todo_list.push_back(psubPoly2);
+       initPlygon->clear();
+       // delete initPlygon;
++      // PATCH(dude-6): freed in SE2d::destroy(), except the caller's polygon
++      if (bExtractSkeleton && initPlygon != se.initPolygon)
++        se.splitPolygons.push_back(initPlygon);
+ 
+       if (!b)
+         break;
+diff --git a/src/skeleton/SE2d.cpp b/src/skeleton/SE2d.cpp
+index e568a6e..49490c5 100644
+--- a/src/skeleton/SE2d.cpp
++++ b/src/skeleton/SE2d.cpp
+@@ -299,4 +299,9 @@ void SE2d::destroy() {
+   }
+   for (set<se_mouth *>::iterator i = mouths.begin(); i != mouths.end(); i++)
+     delete *i; // PATCH(dude-4e)
++  // PATCH(dude-6): after the map and the se_m that point at them; each once
++  set<c_polygon *> split(splitPolygons.begin(), splitPolygons.end());
++  for (set<c_polygon *>::iterator i = split.begin(); i != split.end(); i++)
++    delete *i;
++  splitPolygons.clear();
+ }
+diff --git a/src/skeleton/SE2d.h b/src/skeleton/SE2d.h
+index a0256c9..10e72b4 100644
+--- a/src/skeleton/SE2d.h
++++ b/src/skeleton/SE2d.h
+@@ -69,6 +69,9 @@ public:
+   // add by Guilin
+   void removeItem(se_m *tm);
+   map<c_polygon *, se_m *> ply2MouthMap;
++  // PATCH(dude-6): polygons that decomposePolygonUsingCuts split and cleared
++  // (keys of ply2MouthMap, cd of a replaced se_m); freed at the end of destroy()
++  vector<c_polygon *> splitPolygons;
+ 
+   void addHoleDiagBranch(ply_vertex *v1, ply_vertex *v2, se_m *m);
+ };
+-- 
+2.34.1
+

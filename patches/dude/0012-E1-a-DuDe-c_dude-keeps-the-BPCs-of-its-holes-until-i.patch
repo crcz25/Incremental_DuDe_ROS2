@@ -1,0 +1,78 @@
+From 81df88d0d5b291c74741818de23224d23332d9bd Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 10:30:38 +0000
+Subject: [PATCH] E1: a DuDe c_dude keeps the BPCs of its holes until it ends
+ (DP-1)
+
+decompose_hole builds a local c_dude on each hole. Its BPCs set
+concavity_bpc on the hole's vertices, which belong to the input polygon,
+and were deleted when decompose_hole returned. c_dude::is_bridge_breaking
+then read concavity_bpc->getSource1() (ASan: heap-use-after-free, freed by
+~c_dude <- decompose_hole <- buildBPC_from_hole). Freiburg52 at tau 20 px
+crashed on it.
+
+PATCH(dude-5), option B: decompose_hole moves the local c_dude's BPCs
+(with their kids) to the outer c_dude's m_hole_bpcs; ~c_dude deletes them.
+~c_dude does not reset the vertices' concavity_bpc: the wrapper frees the
+input polygon's vertices before its c_dude member, so that write is itself
+a heap-use-after-free (shown with ASan in a worktree). Every vertex that
+outlives a c_dude is reset by reInitializePolygon first.
+
+Options A (null concavity_bpc of the hole vertices) and B give identical
+canonical and exact dumps on the eight maps and on Freiburg52 at tau 20 px.
+
+Tests: TheTau20DecompositionIsUnchanged and
+TheTau20ExactDecompositionIsUnchanged are enabled, with their golden files
+recorded from this commit, each in a fresh process;
+NoVertexPointsAtAFreedBpcAfterBuild checks every concavity_bpc of the
+input after c_dude::build. The two existing golden files are unchanged.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/dude.cpp | 6 ++++++
+ src/dude.h   | 5 +++++
+ 2 files changed, 11 insertions(+)
+
+diff --git a/src/dude.cpp b/src/dude.cpp
+index e1765c1..2daac73 100644
+--- a/src/dude.cpp
++++ b/src/dude.cpp
+@@ -36,6 +36,11 @@ c_dude::~c_dude() {
+     delete current;
+   }
+   m_bpcs.clear();
++  for (list<c_BPC *>::iterator iter = m_hole_bpcs.begin();
++       iter != m_hole_bpcs.end(); iter++)
++    delete *iter; // PATCH(dude-5); the vertices are not read here: the
++                  // wrapper frees the input polygon before its c_dude
++  m_hole_bpcs.clear();
+   //////
+   m_reduced_P.clear();
+   // PATCH(dude-4d): the simplified polygon's vertices are this c_dude's own
+@@ -649,6 +654,7 @@ void c_dude::decompose_hole(c_ply &hole, list<ply_vertex *> &tmpholePMs,
+   c_dude dude;
+   dude.build(polygon, m_tau * HOLECONCAVITYRATIO, false);
+   hole.reverseType();
++  m_hole_bpcs.splice(m_hole_bpcs.end(), dude.m_bpcs); // PATCH(dude-5)
+ 
+   // get the final cut for this hole
+   const vector<c_diagonal> &holecuts = dude.getFinalCuts();
+diff --git a/src/dude.h b/src/dude.h
+index 59838d1..3934eb0 100644
+--- a/src/dude.h
++++ b/src/dude.h
+@@ -129,6 +129,11 @@ public:
+   // vertices are freed with this c_dude (hole_PMs may still point at them)
+   list<c_ply> m_ignored_holes;
+ 
++  // PATCH(dude-5): the BPCs of the c_dude that decompose_hole builds on each
++  // hole; they set concavity_bpc on the hole's vertices, which
++  // is_bridge_breaking reads later. Freed in ~c_dude.
++  list<c_BPC *> m_hole_bpcs;
++
+   // combine the extra-boundary pocket minimums and hole minimums
+   void combineMinimumPnts(list<ply_vertex *> &extraPMs,
+                           list<ply_vertex *> &holePMs,
+-- 
+2.34.1
+

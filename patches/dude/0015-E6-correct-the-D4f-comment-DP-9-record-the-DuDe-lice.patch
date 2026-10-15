@@ -1,0 +1,40 @@
+From 30b06bce8b887418e5102b14608268d6e79bfa4a Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 14:01:13 +0000
+Subject: [PATCH] E6: correct the D4f comment (DP-9); record the DuDe licence
+ situation
+
+The comment of PATCH(dude-4f) gave a wrong reason ("hole_PMs may still
+point at them"): decompose_hole adds nothing for an ignorable hole. The
+release is correct; the real reason is that P.erase drops the hole from P,
+so nothing else frees its vertices. The marker is kept.
+
+patches/dude/PERMISSION.md records the origin of DuDe, the missing LICENSE
+file (the headers refer to it), the owner's confirmation of 2026-10-15
+that DuDe may be modified, that this note is a record and not a licence
+grant, and the recommendation to ask the upstream authors for a licence.
+package.xml is not changed (L-09, Phase 6).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/dude.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/dude.h b/src/dude.h
+index 3934eb0..99198df 100644
+--- a/src/dude.h
++++ b/src/dude.h
+@@ -125,8 +125,8 @@ public:
+ 
+   vector<c_diagonal> holeCutDiagonals;
+ 
+-  // PATCH(dude-4f): holes that buildBPC removed from P as ignorable; their
+-  // vertices are freed with this c_dude (hole_PMs may still point at them)
++  // PATCH(dude-4f): holes that buildBPC removed from P as ignorable; P no
++  // longer frees their vertices, so this c_dude does, in ~c_dude
+   list<c_ply> m_ignored_holes;
+ 
+   // PATCH(dude-5): the BPCs of the c_dude that decompose_hole builds on each
+-- 
+2.34.1
+
