@@ -48,6 +48,7 @@
 #include <sstream>
 #include <utility>
 #include <optional>
+#include <random>
 #include <map>
 #include <string>
 #include <tuple>
@@ -343,6 +344,12 @@ TEST(DudeWrapper, H03_ARoomWithoutCutsIsReleasedOnce) {
 // depend on heap addresses (they differ between processes and after other
 // decompositions, with or without the patches); the geometry does not.
 // These tests run in a process of their own (test_dude_reference).
+// The CDT edge hook of patches/dude/ dude-0b, a global of DuDe's cdt2.cpp
+// (weak: absent in an unpatched DuDe, where the tests that need it skip).
+extern void (*g_cdt_edge_test_hook)(
+    std::vector<std::pair<ply_vertex *, ply_vertex *>> &, bool &)
+    __attribute__((weak));
+
 namespace dude_reference {
 
 using Pt = std::pair<double, double>;  // x, y
@@ -554,9 +561,8 @@ void write(std::ostream &out, const std::string &name, const std::vector<Seg> &s
   }
 }
 
-// The canonical form of `r` as text.
-std::string text(const Result &raw) {
-  const Result r = canonical(raw);
+// `r` as text, in the order and orientation it has.
+std::string exactText(const Result &r) {
   std::ostringstream out;
   out << "map " << r.name << '\n';
   write(out, "input_contour", r.input_contour);
@@ -593,39 +599,71 @@ std::string text(const Result &raw) {
   return out.str();
 }
 
+// The canonical form of `r` as text.
+std::string text(const Result &raw) { return exactText(canonical(raw)); }
+
 // ---- the maps -----------------------------------------------------------------
 
-std::vector<Result> allMaps() {
-  std::vector<Result> all;
-  {  // a convex room (an octagon)
+std::vector<std::function<Result()>> mapMakers() {
+  std::vector<std::function<Result()>> all;
+  all.push_back([] {  // a convex room (an octagon)
     cv::Mat image = cv::Mat::zeros(120, 160, CV_8UC1);
     const std::vector<cv::Point> octagon = {{40, 10}, {120, 10}, {150, 40},
                                             {150, 80}, {120, 110}, {40, 110},
                                             {10, 80}, {10, 40}};
     cv::fillConvexPoly(image, octagon, 255);
-    all.push_back(decompose("convex_octagon", image));
-  }
-  {  // a room without cuts (H03_ARoomWithoutCutsIsReleasedOnce)
+    return decompose("convex_octagon", image);
+  });
+  all.push_back([] {  // a room without cuts (H03_ARoomWithoutCutsIsReleasedOnce)
     cv::Mat image = cv::Mat::zeros(120, 160, CV_8UC1);
     cv::rectangle(image, cv::Point(10, 10), cv::Point(150, 110), 255, -1);
-    all.push_back(decompose("room_without_cuts", image));
-  }
-  {  // three rooms joined by two corridors (concave, two cuts or more)
+    return decompose("room_without_cuts", image);
+  });
+  all.push_back([] {  // three rooms joined by two corridors (concave, two cuts or more)
     cv::Mat image = cv::Mat::zeros(120, 240, CV_8UC1);
     cv::rectangle(image, cv::Point(10, 10), cv::Point(70, 110), 255, -1);
     cv::rectangle(image, cv::Point(90, 10), cv::Point(150, 110), 255, -1);
     cv::rectangle(image, cv::Point(170, 10), cv::Point(230, 110), 255, -1);
     cv::rectangle(image, cv::Point(70, 50), cv::Point(90, 70), 255, -1);
     cv::rectangle(image, cv::Point(150, 30), cv::Point(170, 45), 255, -1);
-    all.push_back(decompose("three_rooms", image));
-  }
-  {  // a room with a hole (an obstacle in the middle)
+    return decompose("three_rooms", image);
+  });
+  all.push_back([] {  // a room with a hole (an obstacle in the middle)
     cv::Mat image = cv::Mat::zeros(160, 200, CV_8UC1);
     cv::rectangle(image, cv::Point(10, 10), cv::Point(190, 150), 255, -1);
     cv::rectangle(image, cv::Point(80, 60), cv::Point(120, 100), 0, -1);
-    all.push_back(decompose("room_with_hole", image));
-  }
-  {  // a real map: the free cells of Freiburg52_scan, opened (5 x 5) like
+    return decompose("room_with_hole", image);
+  });
+  all.push_back([] {  // a comb: a corridor with six teeth (many cuts)
+    cv::Mat image = cv::Mat::zeros(130, 250, CV_8UC1);
+    cv::rectangle(image, cv::Point(10, 10), cv::Point(240, 40), 255, -1);
+    for (int x = 14; x + 16 <= 240; x += 40) {
+      cv::rectangle(image, cv::Point(x, 40), cv::Point(x + 16, 110), 255, -1);
+    }
+    return decompose("comb", image);
+  });
+  all.push_back([] {  // a square spiral corridor (many diagonal candidates)
+    cv::Mat image = cv::Mat::zeros(200, 200, CV_8UC1);
+    const std::vector<cv::Point> path = {{20, 20},  {180, 20}, {180, 180},
+                                         {40, 180}, {40, 50},  {150, 50},
+                                         {150, 150}, {70, 150}, {70, 80},
+                                         {120, 80}, {120, 120}};
+    cv::polylines(image, path, false, 255, 12);
+    return decompose("spiral", image);
+  });
+  all.push_back([] {  // nine rooms on a 3 x 3 grid joined by corridors
+    cv::Mat image = cv::Mat::zeros(200, 260, CV_8UC1);
+    for (int r = 0; r < 3; ++r) {
+      for (int c = 0; c < 3; ++c) {
+        const cv::Point o(10 + 85 * c, 10 + 62 * r);
+        cv::rectangle(image, o, o + cv::Point(60, 40), 255, -1);
+        if (c < 2) cv::rectangle(image, o + cv::Point(60, 14), o + cv::Point(85, 26), 255, -1);
+        if (r < 2) cv::rectangle(image, o + cv::Point(22, 40), o + cv::Point(36, 62), 255, -1);
+      }
+    }
+    return decompose("room_grid", image);
+  });
+  all.push_back([] {  // a real map: the free cells of Freiburg52_scan, opened (5 x 5) like
      // the node's cleaning removes thin noise. At tau 20 px DuDe crashes on
      // this map in c_dude::is_bridge_breaking (unpatched DuDe as well).
     const std::filesystem::path map =
@@ -639,9 +677,90 @@ std::vector<Result> allMaps() {
     cv::morphologyEx(free_space, free_space, cv::MORPH_OPEN,
                      cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5)));
     // tau 2.7 m at 0.05 m per pixel, the evaluation setting (54 px)
-    all.push_back(decompose("Freiburg52_scan", free_space, 54.0f));
+    return decompose("Freiburg52_scan", free_space, 54.0f);
+  });
+  return all;
+}
+
+using CdtEdge = std::pair<ply_vertex *, ply_vertex *>;
+struct EdgeOrder {
+  std::mt19937 rng;
+  bool sort{true};
+  size_t equal_edges{0};  // edges equal on all four coordinates
+};
+EdgeOrder &edgeOrder() {
+  static EdgeOrder order;
+  return order;
+}
+void shuffleEdges(std::vector<CdtEdge> &edges, bool &sort) {
+  std::vector<CdtEdge> sorted_copy = edges;
+  std::sort(sorted_copy.begin(), sorted_copy.end(), [](const CdtEdge &a, const CdtEdge &b) {
+    return std::make_tuple(a.first->getPos()[0], a.first->getPos()[1],
+                           a.second->getPos()[0], a.second->getPos()[1]) <
+           std::make_tuple(b.first->getPos()[0], b.first->getPos()[1],
+                           b.second->getPos()[0], b.second->getPos()[1]);
+  });
+  for (size_t i = 1; i < sorted_copy.size(); ++i) {
+    if (sorted_copy[i - 1].first->getPos() == sorted_copy[i].first->getPos() &&
+        sorted_copy[i - 1].second->getPos() == sorted_copy[i].second->getPos()) {
+      ++edgeOrder().equal_edges;
+    }
+  }
+  std::shuffle(edges.begin(), edges.end(), edgeOrder().rng);
+  sort = edgeOrder().sort;
+}
+// Installs shuffleEdges with `seed` for its lifetime.
+struct ShuffledEdges {
+  ShuffledEdges(unsigned seed, bool sort) {
+    edgeOrder().rng.seed(seed);
+    edgeOrder().sort = sort;
+    ::g_cdt_edge_test_hook = &shuffleEdges;
+  }
+  ~ShuffledEdges() { ::g_cdt_edge_test_hook = nullptr; }
+};
+
+std::vector<Result> allMaps() {
+  std::vector<Result> all;
+  for (const auto &make : mapMakers()) {
+    all.push_back(make());
   }
   return all;
+}
+
+std::string exactText(const std::vector<Result> &all) {
+  std::string out;
+  for (const Result &r : all) {
+    out += exactText(r);
+  }
+  return out;
+}
+
+// Hooks for checking the exact result under other histories (unset in the
+// normal run): DUDE_REFERENCE_WARMUP=2,0,4 decomposes those maps first;
+// DUDE_REFERENCE_PREALLOC=n allocates n blocks of varied sizes and frees
+// every other one, so later allocations land elsewhere.
+std::vector<std::unique_ptr<char[]>> &preallocated() {
+  static std::vector<std::unique_ptr<char[]>> blocks;
+  return blocks;
+}
+void applyHistoryHooks() {
+  if (const char *n = std::getenv("DUDE_REFERENCE_PREALLOC")) {
+    const int count = std::atoi(n);
+    for (int i = 0; i < count; ++i) {
+      preallocated().emplace_back(new char[16 + (i * 37) % 4096]);
+    }
+    for (size_t i = 0; i < preallocated().size(); i += 2) {
+      preallocated()[i].reset();
+    }
+  }
+  if (const char *w = std::getenv("DUDE_REFERENCE_WARMUP")) {
+    const auto makers = mapMakers();
+    std::stringstream order(w);
+    std::string index;
+    while (std::getline(order, index, ',')) {
+      makers.at(static_cast<size_t>(std::stoi(index)))();
+    }
+  }
 }
 
 std::string text(const std::vector<Result> &all) {
@@ -678,11 +797,33 @@ TEST(DudeReference, TheDecompositionOfFixedMapsIsUnchanged) {
       << "; see dude_decomposition_reference.actual.txt";
 }
 
+// The exact result (DuDe's order and orientation; recorded with the stable
+// order of patches/dude/ dude-0, without the leak fixes) is unchanged, also
+// after other decompositions (DUDE_REFERENCE_WARMUP) or allocations
+// (DUDE_REFERENCE_PREALLOC).
+TEST(DudeReference, TheExactDecompositionIsUnchanged) {
+  dude_reference::applyHistoryHooks();
+  const std::string actual = dude_reference::exactText(dude_reference::allMaps());
+  std::ofstream("dude_decomposition_exact_reference.actual.txt") << actual;
+  const std::filesystem::path golden =
+      std::filesystem::path(__FILE__).parent_path() /
+      "golden/dude_decomposition_exact_reference.txt";
+  std::ifstream in(golden);
+  ASSERT_TRUE(in) << "missing " << golden;
+  std::stringstream expected;
+  expected << in.rdbuf();
+  EXPECT_TRUE(expected.str() == actual)
+      << "differs from " << golden
+      << "; see dude_decomposition_exact_reference.actual.txt";
+}
+
 // A second pass in the same process (after the first decompositions) gives
 // the same canonical result.
 TEST(DudeReference, ASecondPassGivesTheSameResult) {
-  const std::string first = dude_reference::text(dude_reference::allMaps());
-  EXPECT_TRUE(dude_reference::text(dude_reference::allMaps()) == first);
+  const auto first = dude_reference::allMaps();
+  const auto second = dude_reference::allMaps();
+  EXPECT_TRUE(dude_reference::text(second) == dude_reference::text(first));
+  EXPECT_TRUE(dude_reference::exactText(second) == dude_reference::exactText(first));
 }
 
 TEST(DudeReference, TheMapsCoverCutsAndAHole) {
@@ -717,4 +858,36 @@ TEST(DudeReference, TheComparisonDetectsRealChanges) {
   std::reverse(reordered.cuts.begin(), reordered.cuts.end());
   std::swap(reordered.cuts[0].first, reordered.cuts[0].second);
   EXPECT_EQ(dude_reference::text(reordered), reference);
+}
+
+// dude-0b: DuDe's exact result does not depend on the order in which CGAL
+// returns the CDT edges: 20 fixed shuffles of every edge list (the sort
+// kept) give the same exact dump for every map.
+TEST(DudeReference, TheExactResultDoesNotDependOnTheCdtEdgeOrder) {
+  if (&::g_cdt_edge_test_hook == nullptr) {
+    GTEST_SKIP() << "DuDe without patches/dude/ dude-0b";
+  }
+  const std::string expected = dude_reference::exactText(dude_reference::allMaps());
+  for (unsigned seed = 1; seed <= 20; ++seed) {
+    dude_reference::ShuffledEdges shuffled(seed, true);
+    EXPECT_TRUE(dude_reference::exactText(dude_reference::allMaps()) == expected)
+        << "seed " << seed;
+  }
+  std::cout << "CDT edges equal on all four coordinates: "
+            << dude_reference::edgeOrder().equal_edges << std::endl;
+}
+
+// dude-0b: without the sort, the same 20 shuffles of the CDT edges give the
+// same geometry (canonical dump) for every map: DuDe's choice of diagonals
+// does not depend on their order for these maps.
+TEST(DudeReference, TheGeometryDoesNotDependOnTheUnsortedCdtEdgeOrder) {
+  if (&::g_cdt_edge_test_hook == nullptr) {
+    GTEST_SKIP() << "DuDe without patches/dude/ dude-0b";
+  }
+  const std::string expected = dude_reference::text(dude_reference::allMaps());
+  for (unsigned seed = 1; seed <= 20; ++seed) {
+    dude_reference::ShuffledEdges shuffled(seed, false);
+    EXPECT_TRUE(dude_reference::text(dude_reference::allMaps()) == expected)
+        << "seed " << seed;
+  }
 }
