@@ -76,6 +76,12 @@ not depend on the order.
 | 0010 | D4e | The skeleton extractor frees the mouths | Indirect: `newMouth` ← `updateMouth` ← `decomposePolygonUsingCuts` | 6,800 → 0 | `SE2d::destroy()` collects the mouths of every se_m it frees and deletes each once, after the se_m. | `PATCH(dude-4e)` | H-03 test (no leak left) |
 | 0011 | D4f | A c_dude frees the holes it removed as ignorable | `c_ply::copy` ← `c_polygon::copy` ← `Dual_decompose` (the vertices of a hole that `buildBPC` erased) | `test_evaluation_node`: 7,360 → 0 (5 holes × 8 vertices) | `c_dude` keeps the erased ply in `m_ignored_holes` (its `hole_PMs` may point at it) and destroys it in `~c_dude`. | `PATCH(dude-4f)` | whole `test_evaluation_node` in the sanitizer build |
 
+Correction to 0011: its comment says `hole_PMs` may still point at the
+erased hole. In fact `decompose_hole` returns before it adds anything to
+`hole_PMs` for an ignorable hole (code review). Keeping the hole until
+`~c_dude` is still correct; the comment was not changed, to stay under the
+150-line limit of the patch.
+
 Not fixed: intermediate `c_polygon` objects in
 `c_dude_use::decomposePolygonUsingCuts` (`// delete initPlygon;`, commented
 out upstream). For the eight reference maps, one pass leaks 26,824 B in 67

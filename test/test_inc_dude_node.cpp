@@ -295,9 +295,8 @@ TEST_F(IncDudeNode, H02_ChatterNoLongerTriggersASave) {
 // H-03: DuDe_OpenCV_wrapper releases what it allocates. One fixed map (two
 // rooms joined by a corridor) decomposed 50 times, each by a new wrapper as
 // Incremental_Decomposer uses them: every run gives the same contours. In
-// the sanitizer build LeakSanitizer still reports DuDe's own allocations
-// (triangulation, cut and decomposition data) for this test, but none the
-// wrapper owns.
+// the sanitizer build LeakSanitizer reports nothing for this test alone
+// (with the DuDe patches in patches/dude/).
 void expectRepeatableDecomposition(const cv::Mat &image, size_t min_pieces) {
   std::vector<std::vector<cv::Point>> first;
   for (int run = 0; run < 50; ++run) {
