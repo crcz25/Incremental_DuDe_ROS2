@@ -1,0 +1,96 @@
+From 082dd0b0192358dcde789182c627acb7ef82c1a5 Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 08:09:05 +0000
+Subject: [PATCH] dude-0b: DuDe takes CGAL's CDT edges in a fixed order
+
+PATCH(dude-0b). c_cdt::build added diagonals in the order and with the
+orientation of CGAL's finite_edges iteration. For identical input that
+order depends on the heap layout (a standalone CGAL program gives the
+same 12 edges in another order after other allocations); CGAL is not
+changed. The unconstrained edges are now oriented from the end point
+with the smaller x (then y) and sorted with std::stable_sort by
+(x1, y1, x2, y2), exact double comparisons, a NaN coordinate last. A
+test hook (g_cdt_edge_test_hook, null) may reorder the edges first or
+skip the sort. Checks (8 reference maps): the canonical dump equals the
+golden recorded from unpatched DuDe; 20 fixed shuffles of every edge
+list give the same exact dump; without the sort the same shuffles give
+the same geometry; no two edges were equal on all four coordinates.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/cdt2.cpp | 35 ++++++++++++++++++++++++++++++++---
+ 1 file changed, 32 insertions(+), 3 deletions(-)
+
+diff --git a/src/cdt2.cpp b/src/cdt2.cpp
+index 86b1759..3bed997 100644
+--- a/src/cdt2.cpp
++++ b/src/cdt2.cpp
+@@ -18,9 +18,29 @@ typedef CDT::Vertex_handle Vertex_handle;
+ using namespace std;
+ 
+ #include "cdt2.h"
++#include <cmath> // PATCH(dude-0b)
+ #include "intersection.h"
+ #include "polygon.h"
+ 
++// PATCH(dude-0b): CGAL's edge order and orientation depend on the heap
++// layout (the triangulation does not); the edges are oriented from the
++// smaller end point and sorted by (x1, y1, x2, y2), a NaN coordinate last.
++// The hook (null; tests only) may reorder them first or skip the sort.
++typedef pair<ply_vertex *, ply_vertex *> cdt_edge;
++void (*g_cdt_edge_test_hook)(vector<cdt_edge> &, bool &) = NULL;
++static bool pointLess(const Point2d &a, const Point2d &b) {
++  for (int i = 0; i < 2; i++) // both NaN or equal: the next coordinate
++    if (std::isnan(a[i]) != std::isnan(b[i]) || (!std::isnan(a[i]) && a[i] != b[i]))
++      return std::isnan(b[i]) || a[i] < b[i];
++  return false;
++}
++static bool edgeLess(const cdt_edge &a, const cdt_edge &b) {
++  const Point2d &a1 = a.first->getPos(), &b1 = b.first->getPos();
++  if (pointLess(a1, b1) || pointLess(b1, a1))
++    return pointLess(a1, b1);
++  return pointLess(a.second->getPos(), b.second->getPos());
++}
++
+ bool c_cdt::build(c_dude &ap, c_polygon &sp, c_polygon &initPolygon) {
+   CDT cdt;
+   map<const ply_vertex *, Vertex_handle> v2cgal;
+@@ -68,6 +88,7 @@ bool c_cdt::build(c_dude &ap, c_polygon &sp, c_polygon &initPolygon) {
+ 
+   //
+   typedef CDT::Finite_edges_iterator IT;
++  vector<cdt_edge> edges; // PATCH(dude-0b): sorted below
+   for (IT eit = cdt.finite_edges_begin(); eit != cdt.finite_edges_end();
+        ++eit) {
+     if (cdt.is_constrained(*eit) == false) // not a constraint
+@@ -81,9 +102,9 @@ bool c_cdt::build(c_dude &ap, c_polygon &sp, c_polygon &initPolygon) {
+       if (pv1 == NULL || pv2 == NULL)
+         continue;
+ 
+-      if (ap.isDiagonal(pv1, pv2, sp, sp)) {
+-        ap.addDiagonal(pv1, pv2, sp);
+-      }
++      if (pointLess(pv2->getPos(), pv1->getPos())) // PATCH(dude-0b)
++        swap(pv1, pv2);
++      edges.push_back(cdt_edge(pv1, pv2));
+       //			//ap.addDiagonal(pv1,pv2,sp);
+       //            if( ap.isDiagonal(pv1,pv2,sp) )
+       //            {
+@@ -91,6 +112,14 @@ bool c_cdt::build(c_dude &ap, c_polygon &sp, c_polygon &initPolygon) {
+       //            }
+     }
+   }
++  bool sort_edges = true; // PATCH(dude-0b)
++  if (g_cdt_edge_test_hook != NULL)
++    g_cdt_edge_test_hook(edges, sort_edges);
++  if (sort_edges)
++    stable_sort(edges.begin(), edges.end(), edgeLess);
++  for (size_t i = 0; i < edges.size(); i++)
++    if (ap.isDiagonal(edges[i].first, edges[i].second, sp, sp))
++      ap.addDiagonal(edges[i].first, edges[i].second, sp);
+ 
+   return true;
+ }
+-- 
+2.34.1
+

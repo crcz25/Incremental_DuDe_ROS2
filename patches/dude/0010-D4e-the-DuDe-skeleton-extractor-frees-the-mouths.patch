@@ -1,0 +1,47 @@
+From 6b1049c455d1f7b8aeb17558350d65b6004d404a Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 07:10:16 +0000
+Subject: [PATCH] D4e: the DuDe skeleton extractor frees the mouths
+
+PATCH(dude-4e). newMouth() creates each se_mouth with new and puts it
+in the mouth lists of the se_m on both sides; splitMouth() copies it to
+the se_m of a split without removing it from the old one, so several
+se_m hold it and none freed it. SE2d::destroy() collects the mouths of
+every se_m it frees (listed and replaced) and deletes each once, after
+the se_m. LeakSanitizer, H-03 test alone: 6,800 B / 150 allocations
+before, none after; test_inc_dude_node without DudeReference: no leak.
+DudeReference unchanged (own process and whole program); no ASan or
+UBSan report.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/skeleton/SE2d.cpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/skeleton/SE2d.cpp b/src/skeleton/SE2d.cpp
+index 8d652bf..e568a6e 100644
+--- a/src/skeleton/SE2d.cpp
++++ b/src/skeleton/SE2d.cpp
+@@ -278,6 +278,12 @@ void SE2d::destroy() {
+        i != ply2MouthMap.end(); i++)
+     if (i->second != NULL && listed.count(i->second) == 0)
+       replaced.insert(i->second);
++  // PATCH(dude-4e): the mouths (newMouth) are shared by the se_m on both
++  // sides and never freed; collect them from every se_m, free each once last
++  set<se_mouth *> mouths;
++  listed.insert(replaced.begin(), replaced.end());
++  for (set<se_m *>::iterator i = listed.begin(); i != listed.end(); i++)
++    mouths.insert((*i)->mouth.begin(), (*i)->mouth.end());
+   for (set<se_m *>::iterator i = replaced.begin(); i != replaced.end(); i++)
+     delete *i;
+   ply2MouthMap.clear();
+@@ -291,4 +297,6 @@ void SE2d::destroy() {
+       delete *im;
+     done_list.clear();
+   }
++  for (set<se_mouth *>::iterator i = mouths.begin(); i != mouths.end(); i++)
++    delete *i; // PATCH(dude-4e)
+ }
+-- 
+2.34.1
+

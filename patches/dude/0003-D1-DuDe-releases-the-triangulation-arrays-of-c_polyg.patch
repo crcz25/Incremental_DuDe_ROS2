@@ -1,0 +1,54 @@
+From fc73acde95c97609e487c9ccbb261e3c3e46a79b Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 06:58:29 +0000
+Subject: [PATCH] D1: DuDe releases the triangulation arrays of
+ c_polygon::triangulate
+
+PATCH(dude-1). c_polygon::triangulate allocated ringVN, V and T with
+new[] and never released them (c_ply::triangulate does); both functions
+also leaked ringVN on their early return for fewer than 3 vertices. FIST
+writes the triangles into T and keeps none of the arrays. LeakSanitizer,
+H-03 test alone: 1,866,000 B / 12,400 allocations before, 1,808,000 B /
+11,650 after (Direct 82,000 -> 24,000: both c_polygon::triangulate
+stacks gone). DudeReference unchanged (own process and whole program);
+no ASan or UBSan report.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/polygon.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/polygon.cpp b/src/polygon.cpp
+index d246c33..76a4448 100644
+--- a/src/polygon.cpp
++++ b/src/polygon.cpp
+@@ -470,6 +470,7 @@ void c_ply::triangulate(vector<triangle> &tris) {
+       for (short i = 0; i < 3; i++)
+         tri.v[i] = i;
+       tris.push_back(tri);
++      delete[] ringVN; // PATCH(dude-1): released on this early return too
+       return;
+     }
+ 
+@@ -733,6 +734,7 @@ void c_polygon::triangulate(vector<triangle> &tris) {
+         //             triangle tri;
+         //             for(short i=0;i<3;i++) tri.v[i]=i;
+         //             tris.push_back(tri);
++        delete[] ringVN; // PATCH(dude-1): released on this early return too
+         return;
+       }
+ 
+@@ -763,6 +765,10 @@ void c_polygon::triangulate(vector<triangle> &tris) {
+         } // end j
+         triangulation.push_back(tri);
+       } // end i
++      // PATCH(dude-1): ringVN, V and T were never released (FIST keeps none)
++      delete[] ringVN;
++      delete[] V;
++      delete[] T;
+     } else {
+       // split the polygon into sub-polygons and then triangulate
+       list<c_polygon> subp = split();
+-- 
+2.34.1
+

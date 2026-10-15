@@ -1,0 +1,37 @@
+From e88d62a1e0058dc32643f7f3253cd972fa444235 Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 07:05:30 +0000
+Subject: [PATCH] D4a: DuDe frees the visualization pocket copies of a BPC
+
+PATCH(dude-4a). c_BPC::determineConcavity_real copies the pocket of the
+BPC and of each kid with seg2Ply (new vertices, read only for a
+visualization that is commented out) and never freed them. They are
+destroyed at the end of the function (it has no other return).
+LeakSanitizer, H-03 test alone: 1,784,000 B / 11,500 allocations
+before, 1,066,400 B / 7,600 after. DudeReference unchanged (own process
+and whole program); no ASan or UBSan report.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/bpc.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/bpc.cpp b/src/bpc.cpp
+index a2b4eac..da9b0c4 100644
+--- a/src/bpc.cpp
++++ b/src/bpc.cpp
+@@ -417,6 +417,11 @@ void c_BPC::determineConcavity_real(float tau, bool reducePMs) {
+         m_concavities.push_back(*i);
+     }
+   }
++  // PATCH(dude-4a): the pocket copies made for visualization (seg2Ply, new
++  // vertices nothing else points to) were never freed
++  tmpply.destroy();
++  for (size_t i = 0; i < tmpChildren.size(); i++)
++    tmpChildren[i].destroy();
+ }
+ void c_BPC::determineConcavity(float tau, bool reducePMs) {
+   determineConcavity_real(tau, reducePMs);
+-- 
+2.34.1
+

@@ -1,0 +1,58 @@
+From 3987f342b3cf04f73911ff4dde50f1b804756c06 Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 07:02:06 +0000
+Subject: [PATCH] D3: the DuDe skeleton extractor frees the se_m that splits
+ replaced
+
+PATCH(dude-3). iterativeDecompose creates the first se_m of a
+decomposition with new; when a cut splits its polygon,
+decomposePolygonUsingCuts removes it from se.todo_list, but
+ply2MouthMap keeps it (insert() never overwrites, and later lookups by
+parent polygon may still return it), so it cannot be freed there.
+SE2d::destroy() (the wrapper calls it) freed only todo_list and
+done_list; it now also frees, once each, the se_m held only by
+ply2MouthMap, and clears the map. LeakSanitizer, H-03 test alone:
+1,789,600 B / 11,550 allocations before, 1,784,000 B / 11,500 after (no
+Direct leak left). DudeReference unchanged (own process and whole
+program); no ASan or UBSan report in test_inc_dude_node and
+test_evaluation_node.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/skeleton/SE2d.cpp | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/src/skeleton/SE2d.cpp b/src/skeleton/SE2d.cpp
+index e5e55f6..8d652bf 100644
+--- a/src/skeleton/SE2d.cpp
++++ b/src/skeleton/SE2d.cpp
+@@ -5,6 +5,7 @@
+ #include "dude.h"
+ #include "dude_cut.h"
+ #include "polygon.h"
++#include <set> // PATCH(dude-3): for destroy()
+ 
+ 
+ ///////////////////////////////////////////////////////////////////////////////
+@@ -268,6 +269,18 @@ void SE2d::UpdateSkeleton() {
+ 
+ void SE2d::destroy() {
+   typedef list<se_m *>::iterator MIT;
++  // PATCH(dude-3): an se_m that a split replaced left todo_list but stays in
++  // ply2MouthMap (insert() keeps the old value); free each of those once.
++  set<se_m *> listed(todo_list.begin(), todo_list.end());
++  listed.insert(done_list.begin(), done_list.end());
++  set<se_m *> replaced;
++  for (map<c_polygon *, se_m *>::iterator i = ply2MouthMap.begin();
++       i != ply2MouthMap.end(); i++)
++    if (i->second != NULL && listed.count(i->second) == 0)
++      replaced.insert(i->second);
++  for (set<se_m *>::iterator i = replaced.begin(); i != replaced.end(); i++)
++    delete *i;
++  ply2MouthMap.clear();
+   {
+     for (MIT im = todo_list.begin(); im != todo_list.end(); im++)
+       delete *im;
+-- 
+2.34.1
+

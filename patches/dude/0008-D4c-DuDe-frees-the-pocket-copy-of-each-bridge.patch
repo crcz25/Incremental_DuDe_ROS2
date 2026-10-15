@@ -1,0 +1,35 @@
+From 4425ec8e18a889c5bce91b597773d4bad3be4909 Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 07:06:52 +0000
+Subject: [PATCH] D4c: DuDe frees the pocket copy of each bridge
+
+PATCH(dude-4c). c_dude::decompose_bridge decomposes a copy of the
+bridge's pocket (create_ply_from_bridge, new vertices) with a second
+c_dude; the kids it creates use the original vertices through vmap, and
+the copy was never freed. It is destroyed after that c_dude is deleted.
+LeakSanitizer, H-03 test alone: 935,200 B / 5,550 allocations before,
+384,000 B / 2,200 after. DudeReference unchanged (own process and whole
+program); no ASan or UBSan report.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/dude.cpp | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/dude.cpp b/src/dude.cpp
+index f15bc93..9b5ec27 100644
+--- a/src/dude.cpp
++++ b/src/dude.cpp
+@@ -926,6 +926,9 @@ void c_dude::decompose_bridge(c_BPC *bpc) {
+ 
+   } // end j
+   delete dude2;
++  // PATCH(dude-4c): the copy of the pocket (create_ply_from_bridge, new
++  // vertices; the kids use the original ones through vmap) was never freed
++  ply.destroy();
+ }
+ 
+ //
+-- 
+2.34.1
+

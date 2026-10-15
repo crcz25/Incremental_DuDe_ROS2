@@ -1,0 +1,51 @@
+From 8c9d560d5c99305a62b5edd3da297dec9d7bb367 Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 07:07:44 +0000
+Subject: [PATCH] D4d: a DuDe c_dude frees its simplified polygon
+
+PATCH(dude-4d). create_simplified_and_reduced builds m_simpilifed_P
+from new vertices (buildSimpliedPly); ~c_dude only cleared the list. It
+now destroys those vertices (m_reduced_P shares the input's vertices and
+is still only cleared), and a simplified ply with fewer than 3 vertices,
+which is not kept, is destroyed at once. The input vertices' other_v may
+still point at freed vertices, but it is read only together with
+concavity_hole, which buildSimpliedPly sets for the same vertices, and
+reInitializePolygon resets both before each later build. LeakSanitizer,
+H-03 test alone: 384,000 B / 2,200 allocations before, 6,800 B / 150
+after. DudeReference unchanged (own process and whole program); no ASan
+or UBSan report in test_inc_dude_node and test_evaluation_node.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/dude.cpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/dude.cpp b/src/dude.cpp
+index 9b5ec27..a821ebf 100644
+--- a/src/dude.cpp
++++ b/src/dude.cpp
+@@ -38,6 +38,9 @@ c_dude::~c_dude() {
+   m_bpcs.clear();
+   //////
+   m_reduced_P.clear();
++  // PATCH(dude-4d): the simplified polygon's vertices are this c_dude's own
++  // (buildSimpliedPly); m_reduced_P only shares the input's
++  m_simpilifed_P.destroy();
+   m_simpilifed_P.clear();
+   m_cutsets.clear();
+   m_diagonals.clear();
+@@ -536,8 +539,10 @@ void c_dude::create_simplified_and_reduced(c_polygon &P) {
+     c_ply ply(i->getType());
+     buildSimpliedPly(*i, ply);
+     if (ply.getHead() != NULL) {
+-      if (ply.getSize() < 3)
++      if (ply.getSize() < 3) {
++        ply.destroy(); // PATCH(dude-4d): not kept, so freed here
+         continue;
++      }
+       m_simpilifed_P.push_back(ply);
+       m_reduced_P.push_back(*i);
+     }
+-- 
+2.34.1
+

@@ -1,0 +1,41 @@
+From 66f930959071e7b648b3126c18ca2bf3eac06def Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 07:00:20 +0000
+Subject: [PATCH] D2: a DuDe BPC releases its kids
+
+PATCH(dude-2). c_dude::decompose_bridge creates the kids of a BPC with
+new c_BPC and addKid(); reorganize_kids_f/insert2tree keep each in
+exactly one parent's m_kids. ~c_dude deletes only the root BPCs
+(m_bpcs) and ~c_BPC was empty, so every kid leaked (100 blocks of 184 B
+in the H-03 test). ~c_BPC now deletes its kids; no c_BPC is copied.
+LeakSanitizer, H-03 test alone: 1,808,000 B / 11,650 allocations before,
+1,789,600 B / 11,550 after (Direct 24,000 -> 5,600). DudeReference
+unchanged (own process and whole program); no ASan or UBSan report.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/bpc.cpp | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/src/bpc.cpp b/src/bpc.cpp
+index cf8aa85..a2b4eac 100644
+--- a/src/bpc.cpp
++++ b/src/bpc.cpp
+@@ -18,7 +18,13 @@ c_BPC::c_BPC() {
+   m_pre = NULL;
+ }
+ 
+-c_BPC::~c_BPC() { int a = 1; }
++c_BPC::~c_BPC() {
++  int a = 1;
++  // PATCH(dude-2): a BPC owns its kids (decompose_bridge creates them with
++  // new; insert2tree keeps each in exactly one m_kids); they were never freed
++  for (list<c_BPC *>::iterator i = m_kids.begin(); i != m_kids.end(); i++)
++    delete *i;
++}
+ 
+ //
+ // build: determine the order of bridge vertices and compute the length of
+-- 
+2.34.1
+

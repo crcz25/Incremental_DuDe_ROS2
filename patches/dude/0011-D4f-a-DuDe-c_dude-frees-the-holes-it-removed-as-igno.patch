@@ -1,0 +1,66 @@
+From 394f851163ec99e4cafbbcc2bed80c60733fbe51 Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 07:13:30 +0000
+Subject: [PATCH] D4f: a DuDe c_dude frees the holes it removed as ignorable
+
+PATCH(dude-4f). c_dude::buildBPC erases a hole that canBeIgnored from
+the polygon it builds, without freeing its vertices; they cannot be
+freed there, because decompose_hole has just put some of them in this
+c_dude's hole_PMs and holeFeatPnts, which the rest of build() uses. The
+c_dude now keeps the erased ply (new member m_ignored_holes) and
+destroys it in ~c_dude. LeakSanitizer, test_evaluation_node (5 ignored
+holes of 8 vertices): 7,360 B / 40 allocations before, none after.
+DudeReference unchanged (own process and whole program); no ASan or
+UBSan report in test_inc_dude_node and test_evaluation_node.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/dude.cpp | 8 ++++++--
+ src/dude.h   | 4 ++++
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/src/dude.cpp b/src/dude.cpp
+index a821ebf..f93b5c9 100644
+--- a/src/dude.cpp
++++ b/src/dude.cpp
+@@ -42,6 +42,9 @@ c_dude::~c_dude() {
+   // (buildSimpliedPly); m_reduced_P only shares the input's
+   m_simpilifed_P.destroy();
+   m_simpilifed_P.clear();
++  for (list<c_ply>::iterator i = m_ignored_holes.begin();
++       i != m_ignored_holes.end(); i++)
++    i->destroy(); // PATCH(dude-4f)
+   m_cutsets.clear();
+   m_diagonals.clear();
+   m_cuts.clear();
+@@ -559,9 +562,10 @@ void c_dude::buildBPC(c_polygon &P) {
+       i++;
+     } else {
+       buildBPC_from_hole(*i);
+-      if (i->canBeIgnored)
++      if (i->canBeIgnored) {
++        m_ignored_holes.push_back(*i); // PATCH(dude-4f): freed in ~c_dude
+         i = P.erase(i);
+-      else
++      } else
+         i++;
+     }
+   }
+diff --git a/src/dude.h b/src/dude.h
+index 0245e57..59838d1 100644
+--- a/src/dude.h
++++ b/src/dude.h
+@@ -125,6 +125,10 @@ public:
+ 
+   vector<c_diagonal> holeCutDiagonals;
+ 
++  // PATCH(dude-4f): holes that buildBPC removed from P as ignorable; their
++  // vertices are freed with this c_dude (hole_PMs may still point at them)
++  list<c_ply> m_ignored_holes;
++
+   // combine the extra-boundary pocket minimums and hole minimums
+   void combineMinimumPnts(list<ply_vertex *> &extraPMs,
+                           list<ply_vertex *> &holePMs,
+-- 
+2.34.1
+

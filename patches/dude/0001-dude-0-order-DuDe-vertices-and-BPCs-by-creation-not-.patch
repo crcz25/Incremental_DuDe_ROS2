@@ -1,0 +1,173 @@
+From fd00d114f2eedab18721f96db020223537c6f73b Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 07:43:21 +0000
+Subject: [PATCH] dude-0: order DuDe vertices and BPCs by creation, not by
+ address
+
+PATCH(dude-0). DuDe ordered by pointer value where the order reaches its
+result: the four set<ply_vertex *> of c_dude (combineMinimumPnts,
+collectPMs, the outer and the total feature points) and the tie break of
+reorganize_kids_f (list<pair<int, c_BPC *>>::sort). That order was
+stable only while DuDe leaked (the heap grew with the creation order);
+with the leak fixes D1 to D4f a second decomposition in the same process
+gave other cuts under some heap layouts. Each ply_vertex and c_BPC now
+gets a creation number (dude_seq: one process-wide std::atomic<uint64_t>,
+relaxed fetch_add; a copy gets a new number, an assignment keeps the
+target's), and those containers order by it (null first). Searched and
+left as is (order does not reach the result): the vertex lookup maps,
+SE2d::ply2MouthMap and the sets of SE2d::destroy(), the cutset angle
+sort (by vector position), the approximation heap (by distance), the
+graph sorts (by id). DudeReference matches its golden, and a second pass
+gives the same result, under six glibc malloc layouts and in ctest.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/bpc.cpp   | 10 +++++++++-
+ src/bpc.h     |  1 +
+ src/dude.cpp  |  8 ++++----
+ src/polygon.h | 27 +++++++++++++++++++++++++++
+ 4 files changed, 41 insertions(+), 5 deletions(-)
+
+diff --git a/src/bpc.cpp b/src/bpc.cpp
+index da9b0c4..364f6d3 100644
+--- a/src/bpc.cpp
++++ b/src/bpc.cpp
+@@ -709,6 +709,13 @@ c_plyline c_BPC::bpc2polyline(const list<ply_vertex *> &vlist) {
+   return ply;
+ }
+ 
++// PATCH(dude-0): pocket size, then creation order of the kid
++static bool kid_order(const pair<int, c_BPC *> &a, const pair<int, c_BPC *> &b) {
++  if (a.first != b.first)
++    return a.first < b.first;
++  return a.second->seq.value < b.second->seq.value;
++}
++
+ void c_BPC::reorganize_kids_f() {
+   uint count = 1;
+   for (ply_vertex *i = m_source[0]; i != m_source[1]; i = i->getNext())
+@@ -726,7 +733,8 @@ void c_BPC::reorganize_kids_f() {
+     m_bridge_ends.push_back(kid->m_source[0]);
+     m_bridge_ends.push_back(kid->m_source[1]);
+   }
+-  sorted_kids.sort(); // sorted_kids.begin(),sorted_kids.end());
++  // PATCH(dude-0): equal pocket sizes by creation, not by address
++  sorted_kids.sort(kid_order); // sorted_kids.begin(),sorted_kids.end());
+   m_kids.clear();
+ 
+   typedef list<pair<int, c_BPC *>>::iterator IT;
+diff --git a/src/bpc.h b/src/bpc.h
+index f994a24..af17e77 100644
+--- a/src/bpc.h
++++ b/src/bpc.h
+@@ -6,6 +6,7 @@ class c_BPC // a class for bridge pocket  and concavity
+ {
+ public:
+   c_BPC();
++  dude_seq seq; // PATCH(dude-0): ties in reorganize_kids_f
+   ~c_BPC();
+ 
+   //
+diff --git a/src/dude.cpp b/src/dude.cpp
+index f93b5c9..e1765c1 100644
+--- a/src/dude.cpp
++++ b/src/dude.cpp
+@@ -185,7 +185,7 @@ void c_dude::combineMinimumPnts(list<ply_vertex *> &extraPMs,
+                                 list<ply_vertex *> &holePMs,
+                                 list<ply_vertex *> &totalPMs) {
+   typedef list<ply_vertex *>::iterator PIT;
+-  set<ply_vertex *> PMset;
++  set<ply_vertex *, ply_vertex_seq_less> PMset; // PATCH(dude-0)
+   for (PIT pit = extraPMs.begin(); pit != extraPMs.end(); ++pit) {
+     PMset.insert(*pit);
+   }
+@@ -1087,7 +1087,7 @@ bool c_dude::is_bridge_breaking(const ply_vertex *v, const ply_vertex *u) {
+ void c_dude::collectPMs(list<c_BPC *> &bpcs) {
+   typedef list<c_BPC *>::iterator IT;
+ 
+-  set<ply_vertex *> pms_set; // use set to avoid duplicates
++  set<ply_vertex *, ply_vertex_seq_less> pms_set; // PATCH(dude-0); no duplicates
+   pms_set.insert(m_PMs.begin(), m_PMs.end());
+   //  m_PMs.clear();
+ 
+@@ -1103,7 +1103,7 @@ void c_dude::collectPMs(list<c_BPC *> &bpcs) {
+ void c_dude::collectOutBoundFeatPnts() {
+   typedef list<c_BPC *>::iterator BIT;
+   poutFeatPnts.clear();
+-  set<ply_vertex *> outFeatPntSet;
++  set<ply_vertex *, ply_vertex_seq_less> outFeatPntSet; // PATCH(dude-0)
+ 
+   for (BIT i = m_bpcs.begin(); i != m_bpcs.end(); i++) {
+     c_BPC *bpc = *i;
+@@ -1134,7 +1134,7 @@ void c_dude::collectOutBoundFeatPnts() {
+ }
+ void c_dude::collectTotalFeatPnts() {
+   // totalFeatPnts.clear();
+-  set<ply_vertex *> totalFeatPntSet;
++  set<ply_vertex *, ply_vertex_seq_less> totalFeatPntSet; // PATCH(dude-0)
+   for (list<ply_vertex *>::iterator pite = poutFeatPnts.begin();
+        pite != poutFeatPnts.end(); ++pite) {
+     totalFeatPntSet.insert(*pite);
+diff --git a/src/polygon.h b/src/polygon.h
+index 86fe601..01e4489 100644
+--- a/src/polygon.h
++++ b/src/polygon.h
+@@ -16,7 +16,9 @@
+ #include <Vector.h>
+ using namespace mathtool;
+ 
++#include <atomic>  // PATCH(dude-0)
+ #include <cassert>
++#include <cstdint> // PATCH(dude-0)
+ #include <list>
+ #include <vector>
+ using namespace std;
+@@ -127,6 +129,21 @@ private:
+   c_ply *concavity_hole;
+ };
+ 
++// PATCH(dude-0): a stable identity for ordering. DuDe ordered vertices (and
++// BPCs) by address; that order was stable only while it leaked. A process-
++// wide creation number replaces it: a copy is a new object (a new number),
++// an assignment keeps the target's number.
++struct dude_seq {
++  dude_seq() : value(next()) {}
++  dude_seq(const dude_seq &) : value(next()) {}
++  dude_seq &operator=(const dude_seq &) { return *this; }
++  static uint64_t next() {
++    static std::atomic<uint64_t> counter(0);
++    return counter.fetch_add(1, std::memory_order_relaxed);
++  }
++  uint64_t value;
++};
++
+ //
+ // Vertex of polygon
+ //
+@@ -183,6 +200,7 @@ public:
+ 
+   // extra info for decomposition
+   ply_vertex_extra extra;
++  dude_seq seq; // PATCH(dude-0)
+ 
+ private:
+   void init() {
+@@ -201,6 +219,15 @@ private:
+   uint vid;
+ };
+ 
++// PATCH(dude-0): orders vertices by creation, not by address (null first)
++struct ply_vertex_seq_less {
++  bool operator()(const ply_vertex *a, const ply_vertex *b) const {
++    if (a == NULL || b == NULL)
++      return a == NULL && b != NULL;
++    return a->seq.value < b->seq.value;
++  }
++};
++
+ //
+ // Polygon chain
+ //
+-- 
+2.34.1
+

@@ -1,0 +1,36 @@
+From dc0604ad11194294e65847f39b7b2bd1942eaebb Mon Sep 17 00:00:00 2001
+From: Carlos Cueto <crcueto25@gmail.com>
+Date: Thu, 15 Oct 2026 07:06:08 +0000
+Subject: [PATCH] D4b: DuDe frees the chains of each approximation pass
+
+PATCH(dude-4b). approximate() (poly_approx.cpp) creates a c_chain with
+new for each segment of a pass; the chains link to each other (pre,
+next) and were never freed. They are deleted at the end of each pass,
+after approximate(chains, new_approx), which is their last use.
+LeakSanitizer, H-03 test alone: 1,066,400 B / 7,600 allocations before,
+935,200 B / 5,550 after. DudeReference unchanged (own process and whole
+program); no ASan or UBSan report.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/poly_approx.cpp | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/poly_approx.cpp b/src/poly_approx.cpp
+index 4ec3209..6b9ff7b 100644
+--- a/src/poly_approx.cpp
++++ b/src/poly_approx.cpp
+@@ -294,6 +294,10 @@ void approximate(const c_plyline &plyline, double tau,
+     // approximate
+     float error = approximate(chains, new_approx);
+     approx = new_approx;
++    // PATCH(dude-4b): the chains of this pass (new c_chain, linked to each
++    // other) were never freed; nothing uses them after approximate()
++    for (size_t c = 0; c < chains.size(); c++)
++      delete chains[c];
+     if (error < tau)
+       break;
+   } while (true);
+-- 
+2.34.1
+
