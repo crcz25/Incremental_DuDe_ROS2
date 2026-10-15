@@ -125,8 +125,8 @@ public:
 
   vector<c_diagonal> holeCutDiagonals;
 
-  // PATCH(dude-4f): holes that buildBPC removed from P as ignorable; their
-  // vertices are freed with this c_dude (hole_PMs may still point at them)
+  // PATCH(dude-4f): holes that buildBPC removed from P as ignorable; P no
+  // longer frees their vertices, so this c_dude does, in ~c_dude
   list<c_ply> m_ignored_holes;
 
   // PATCH(dude-5): the BPCs of the c_dude that decompose_hole builds on each
