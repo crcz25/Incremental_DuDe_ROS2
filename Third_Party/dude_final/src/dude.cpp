@@ -38,6 +38,9 @@ c_dude::~c_dude() {
   m_bpcs.clear();
   //////
   m_reduced_P.clear();
+  // PATCH(dude-4d): the simplified polygon's vertices are this c_dude's own
+  // (buildSimpliedPly); m_reduced_P only shares the input's
+  m_simpilifed_P.destroy();
   m_simpilifed_P.clear();
   m_cutsets.clear();
   m_diagonals.clear();
@@ -536,8 +539,10 @@ void c_dude::create_simplified_and_reduced(c_polygon &P) {
     c_ply ply(i->getType());
     buildSimpliedPly(*i, ply);
     if (ply.getHead() != NULL) {
-      if (ply.getSize() < 3)
+      if (ply.getSize() < 3) {
+        ply.destroy(); // PATCH(dude-4d): not kept, so freed here
         continue;
+      }
       m_simpilifed_P.push_back(ply);
       m_reduced_P.push_back(*i);
     }
