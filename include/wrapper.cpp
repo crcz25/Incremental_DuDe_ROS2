@@ -8,10 +8,16 @@
 // with the wrapper, so they neither grow nor keep pointers to freed
 // vertices. The member draw_decoration below hides this global.
 extern Draw_Decoration draw_decoration;
+// DP-5: DuDe's approximate() (poly_approx.cpp) appends a point to its global
+// g_points on every pass; nothing reads it (draw.h only declares it). It is
+// cleared with the decoration, so it does not grow with each decomposition.
+// Like the decoration it is not thread-safe: decompositions run one at a time.
+extern list<Point2d> g_points;
 
 static void clearGlobalDecoration() {
   ::draw_decoration.allFeaturePMs.clear();
   ::draw_decoration.allFeatureConcavities.clear();
+  ::g_points.clear();  // DP-5
 }
 
 DuDe_OpenCV_wrapper::DuDe_OpenCV_wrapper() {

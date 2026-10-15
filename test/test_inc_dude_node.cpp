@@ -350,6 +350,26 @@ TEST(DudeWrapper, D5_TheGlobalDecorationDoesNotGrow) {
   }
 }
 
+// DP-5: DuDe's approximate() (poly_approx.cpp) appends a point to the global
+// g_points on every pass, and nothing reads it. Its size does not grow with
+// the number of decompositions: it is empty after each wrapper.
+extern std::list<Point2d> g_points;  // DuDe's global (poly_approx.cpp)
+
+TEST(DudeWrapper, DP5_TheGlobalApproximationPointsDoNotGrow) {
+  cv::Mat image = cv::Mat::zeros(120, 160, CV_8UC1);
+  cv::rectangle(image, cv::Point(10, 10), cv::Point(70, 110), 255, -1);
+  cv::rectangle(image, cv::Point(90, 10), cv::Point(150, 110), 255, -1);
+  cv::rectangle(image, cv::Point(70, 50), cv::Point(90, 70), 255, -1);
+  for (int run = 0; run < 20; ++run) {
+    {
+      DuDe_OpenCV_wrapper wrapper;
+      wrapper.set_pixel_Tau(20.0f);
+      wrapper.Decomposer(image.clone());
+    }
+    ASSERT_EQ(::g_points.size(), 0u) << "run " << run;
+  }
+}
+
 // DuDe reference output: the full result of DuDe for fixed maps (the input
 // contour, pocket minima, cut sets, CDT diagonals, cuts, accumulated cuts,
 // pieces and contours), every double in hexfloat, compared exactly with
