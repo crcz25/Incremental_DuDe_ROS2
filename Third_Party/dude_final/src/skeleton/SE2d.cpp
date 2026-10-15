@@ -278,6 +278,12 @@ void SE2d::destroy() {
        i != ply2MouthMap.end(); i++)
     if (i->second != NULL && listed.count(i->second) == 0)
       replaced.insert(i->second);
+  // PATCH(dude-4e): the mouths (newMouth) are shared by the se_m on both
+  // sides and never freed; collect them from every se_m, free each once last
+  set<se_mouth *> mouths;
+  listed.insert(replaced.begin(), replaced.end());
+  for (set<se_m *>::iterator i = listed.begin(); i != listed.end(); i++)
+    mouths.insert((*i)->mouth.begin(), (*i)->mouth.end());
   for (set<se_m *>::iterator i = replaced.begin(); i != replaced.end(); i++)
     delete *i;
   ply2MouthMap.clear();
@@ -291,4 +297,6 @@ void SE2d::destroy() {
       delete *im;
     done_list.clear();
   }
+  for (set<se_mouth *>::iterator i = mouths.begin(); i != mouths.end(); i++)
+    delete *i; // PATCH(dude-4e)
 }
