@@ -6,6 +6,7 @@ class c_BPC // a class for bridge pocket  and concavity
 {
 public:
   c_BPC();
+  dude_seq seq; // PATCH(dude-0): ties in reorganize_kids_f
   ~c_BPC();
 
   //

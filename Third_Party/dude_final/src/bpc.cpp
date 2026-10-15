@@ -709,6 +709,13 @@ c_plyline c_BPC::bpc2polyline(const list<ply_vertex *> &vlist) {
   return ply;
 }
 
+// PATCH(dude-0): pocket size, then creation order of the kid
+static bool kid_order(const pair<int, c_BPC *> &a, const pair<int, c_BPC *> &b) {
+  if (a.first != b.first)
+    return a.first < b.first;
+  return a.second->seq.value < b.second->seq.value;
+}
+
 void c_BPC::reorganize_kids_f() {
   uint count = 1;
   for (ply_vertex *i = m_source[0]; i != m_source[1]; i = i->getNext())
@@ -726,7 +733,8 @@ void c_BPC::reorganize_kids_f() {
     m_bridge_ends.push_back(kid->m_source[0]);
     m_bridge_ends.push_back(kid->m_source[1]);
   }
-  sorted_kids.sort(); // sorted_kids.begin(),sorted_kids.end());
+  // PATCH(dude-0): equal pocket sizes by creation, not by address
+  sorted_kids.sort(kid_order); // sorted_kids.begin(),sorted_kids.end());
   m_kids.clear();
 
   typedef list<pair<int, c_BPC *>>::iterator IT;

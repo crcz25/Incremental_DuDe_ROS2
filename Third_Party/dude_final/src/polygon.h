@@ -16,7 +16,9 @@
 #include <Vector.h>
 using namespace mathtool;
 
+#include <atomic>  // PATCH(dude-0)
 #include <cassert>
+#include <cstdint> // PATCH(dude-0)
 #include <list>
 #include <vector>
 using namespace std;
@@ -127,6 +129,21 @@ private:
   c_ply *concavity_hole;
 };
 
+// PATCH(dude-0): a stable identity for ordering. DuDe ordered vertices (and
+// BPCs) by address; that order was stable only while it leaked. A process-
+// wide creation number replaces it: a copy is a new object (a new number),
+// an assignment keeps the target's number.
+struct dude_seq {
+  dude_seq() : value(next()) {}
+  dude_seq(const dude_seq &) : value(next()) {}
+  dude_seq &operator=(const dude_seq &) { return *this; }
+  static uint64_t next() {
+    static std::atomic<uint64_t> counter(0);
+    return counter.fetch_add(1, std::memory_order_relaxed);
+  }
+  uint64_t value;
+};
+
 //
 // Vertex of polygon
 //
@@ -183,6 +200,7 @@ public:
 
   // extra info for decomposition
   ply_vertex_extra extra;
+  dude_seq seq; // PATCH(dude-0)
 
 private:
   void init() {
@@ -199,6 +217,15 @@ private:
   Vector2d normal;  // normal, the segment normal from this v to the next.
   bool reflex;
   uint vid;
+};
+
+// PATCH(dude-0): orders vertices by creation, not by address (null first)
+struct ply_vertex_seq_less {
+  bool operator()(const ply_vertex *a, const ply_vertex *b) const {
+    if (a == NULL || b == NULL)
+      return a == NULL && b != NULL;
+    return a->seq.value < b->seq.value;
+  }
 };
 
 //

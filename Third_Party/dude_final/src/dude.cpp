@@ -185,7 +185,7 @@ void c_dude::combineMinimumPnts(list<ply_vertex *> &extraPMs,
                                 list<ply_vertex *> &holePMs,
                                 list<ply_vertex *> &totalPMs) {
   typedef list<ply_vertex *>::iterator PIT;
-  set<ply_vertex *> PMset;
+  set<ply_vertex *, ply_vertex_seq_less> PMset; // PATCH(dude-0)
   for (PIT pit = extraPMs.begin(); pit != extraPMs.end(); ++pit) {
     PMset.insert(*pit);
   }
@@ -1087,7 +1087,7 @@ bool c_dude::is_bridge_breaking(const ply_vertex *v, const ply_vertex *u) {
 void c_dude::collectPMs(list<c_BPC *> &bpcs) {
   typedef list<c_BPC *>::iterator IT;
 
-  set<ply_vertex *> pms_set; // use set to avoid duplicates
+  set<ply_vertex *, ply_vertex_seq_less> pms_set; // PATCH(dude-0); no duplicates
   pms_set.insert(m_PMs.begin(), m_PMs.end());
   //  m_PMs.clear();
 
@@ -1103,7 +1103,7 @@ void c_dude::collectPMs(list<c_BPC *> &bpcs) {
 void c_dude::collectOutBoundFeatPnts() {
   typedef list<c_BPC *>::iterator BIT;
   poutFeatPnts.clear();
-  set<ply_vertex *> outFeatPntSet;
+  set<ply_vertex *, ply_vertex_seq_less> outFeatPntSet; // PATCH(dude-0)
 
   for (BIT i = m_bpcs.begin(); i != m_bpcs.end(); i++) {
     c_BPC *bpc = *i;
@@ -1134,7 +1134,7 @@ void c_dude::collectOutBoundFeatPnts() {
 }
 void c_dude::collectTotalFeatPnts() {
   // totalFeatPnts.clear();
-  set<ply_vertex *> totalFeatPntSet;
+  set<ply_vertex *, ply_vertex_seq_less> totalFeatPntSet; // PATCH(dude-0)
   for (list<ply_vertex *>::iterator pite = poutFeatPnts.begin();
        pite != poutFeatPnts.end(); ++pite) {
     totalFeatPntSet.insert(*pite);
