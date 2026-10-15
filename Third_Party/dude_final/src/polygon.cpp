@@ -470,6 +470,7 @@ void c_ply::triangulate(vector<triangle> &tris) {
       for (short i = 0; i < 3; i++)
         tri.v[i] = i;
       tris.push_back(tri);
+      delete[] ringVN; // PATCH(dude-1): released on this early return too
       return;
     }
 
@@ -733,6 +734,7 @@ void c_polygon::triangulate(vector<triangle> &tris) {
         //             triangle tri;
         //             for(short i=0;i<3;i++) tri.v[i]=i;
         //             tris.push_back(tri);
+        delete[] ringVN; // PATCH(dude-1): released on this early return too
         return;
       }
 
@@ -763,6 +765,10 @@ void c_polygon::triangulate(vector<triangle> &tris) {
         } // end j
         triangulation.push_back(tri);
       } // end i
+      // PATCH(dude-1): ringVN, V and T were never released (FIST keeps none)
+      delete[] ringVN;
+      delete[] V;
+      delete[] T;
     } else {
       // split the polygon into sub-polygons and then triangulate
       list<c_polygon> subp = split();
