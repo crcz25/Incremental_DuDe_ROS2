@@ -125,6 +125,10 @@ public:
 
   vector<c_diagonal> holeCutDiagonals;
 
+  // PATCH(dude-4f): holes that buildBPC removed from P as ignorable; their
+  // vertices are freed with this c_dude (hole_PMs may still point at them)
+  list<c_ply> m_ignored_holes;
+
   // combine the extra-boundary pocket minimums and hole minimums
   void combineMinimumPnts(list<ply_vertex *> &extraPMs,
                           list<ply_vertex *> &holePMs,

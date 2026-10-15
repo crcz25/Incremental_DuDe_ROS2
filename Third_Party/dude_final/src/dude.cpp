@@ -42,6 +42,9 @@ c_dude::~c_dude() {
   // (buildSimpliedPly); m_reduced_P only shares the input's
   m_simpilifed_P.destroy();
   m_simpilifed_P.clear();
+  for (list<c_ply>::iterator i = m_ignored_holes.begin();
+       i != m_ignored_holes.end(); i++)
+    i->destroy(); // PATCH(dude-4f)
   m_cutsets.clear();
   m_diagonals.clear();
   m_cuts.clear();
@@ -559,9 +562,10 @@ void c_dude::buildBPC(c_polygon &P) {
       i++;
     } else {
       buildBPC_from_hole(*i);
-      if (i->canBeIgnored)
+      if (i->canBeIgnored) {
+        m_ignored_holes.push_back(*i); // PATCH(dude-4f): freed in ~c_dude
         i = P.erase(i);
-      else
+      } else
         i++;
     }
   }
