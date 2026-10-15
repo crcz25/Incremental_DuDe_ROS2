@@ -50,6 +50,7 @@
 #include <optional>
 #include <map>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace {
@@ -326,161 +327,288 @@ TEST(DudeWrapper, H03_ARoomWithoutCutsIsReleasedOnce) {
   expectRepeatableDecomposition(image, 1);
 }
 
-// DuDe reference output: the full result of DuDe for fixed maps (the
-// pocket minima, cut sets, CDT diagonals, cuts, accumulated cuts, pieces
-// and contours), every double in hexfloat, compared with
-// test/golden/dude_decomposition_reference.txt. Recorded before the DuDe
-// leak patches (patches/dude/), which must not change it. Each run writes
+// DuDe reference output: the full result of DuDe for fixed maps (the input
+// contour, pocket minima, cut sets, CDT diagonals, cuts, accumulated cuts,
+// pieces and contours), every double in hexfloat, compared exactly with
+// test/golden/dude_decomposition_reference.txt (recorded before the DuDe
+// leak patches in patches/dude/, which must not change it). Each run writes
 // what it got to dude_decomposition_reference.actual.txt in the working
 // directory (the build directory), never into the source tree.
-// The pocket minima and the cut sets are written in a canonical order
-// (sorted by x, then y, then every other printed field): DuDe's order of
-// these two lists depends on heap addresses, which differ between runs and
-// change when allocations are released; its final results (CDT diagonals,
-// cuts, accumulated cuts, pieces, contours) do not, and are written in
-// DuDe's own order.
+//
+// The result is compared in a canonical form: a segment is an unordered
+// pair of end points (the smaller first, by x then y), a closed polygon its
+// vertex cycle from its smallest vertex in the direction of the smaller
+// neighbour (every vertex kept), and every list is sorted by all printed
+// fields. The order of DuDe's lists and the orientation of its segments
+// depend on heap addresses (they differ between processes and after other
+// decompositions, with or without the patches); the geometry does not.
+// These tests run in a process of their own (test_dude_reference).
 namespace dude_reference {
 
-void writePos(std::ostream &out, const ply_vertex *v) {
-  if (v == nullptr) {
-    out << " null";
-    return;
-  }
-  out << ' ' << std::hexfloat << v->getPos()[0] << ',' << v->getPos()[1]
-      << std::defaultfloat;
-}
+using Pt = std::pair<double, double>;  // x, y
+using Seg = std::pair<Pt, Pt>;
 
-void writeDiagonals(std::ostream &out, const std::string &name,
-                    const std::vector<c_diagonal> &diagonals) {
-  out << name << ' ' << diagonals.size() << '\n';
+struct Cutset {
+  bool has_v{false};
+  Pt v;
+  int type{0};
+  int resolves{0};
+  std::vector<Seg> diagonals;
+};
+struct Ply {
+  int type{0};
+  std::vector<Pt> vertices;  // a closed cycle
+};
+struct Contour {
+  std::vector<Pt> points;  // a closed cycle
+  Pt centroid;
+};
+struct Result {
+  std::string name;
+  std::vector<Pt> input_contour;  // a closed cycle
+  std::vector<Pt> pocket_minima, hole_pocket_minima;
+  std::vector<Cutset> cutsets;
+  std::vector<Seg> cdt_diagonals, cuts, accumulated_cuts;
+  std::vector<std::vector<Ply>> pieces;
+  std::vector<Contour> contours;
+};
+
+Pt pos(const ply_vertex *v) { return {v->getPos()[0], v->getPos()[1]}; }
+Pt pos(const cv::Point &p) { return {double(p.x), double(p.y)}; }
+
+std::vector<Seg> segments(const std::vector<c_diagonal> &diagonals) {
+  std::vector<Seg> out;
   for (const c_diagonal &d : diagonals) {
-    writePos(out, d.getV1());
-    writePos(out, d.getV2());
-    out << '\n';
+    out.emplace_back(pos(d.getV1()), pos(d.getV2()));
   }
+  return out;
 }
 
-void writeVertices(std::ostream &out, const std::string &name,
-                   const std::list<ply_vertex *> &vertices) {
-  out << name << ' ' << vertices.size() << '\n';
+std::vector<Pt> points(const std::list<ply_vertex *> &vertices) {
+  std::vector<Pt> out;
   for (const ply_vertex *v : vertices) {
-    writePos(out, v);
-    out << '\n';
+    out.push_back(pos(v));
   }
+  return out;
 }
 
-// The sort key of a vertex: x, y (a missing vertex first).
-std::vector<double> posKey(const ply_vertex *v) {
-  if (v == nullptr) {
-    return {-HUGE_VAL, -HUGE_VAL};
-  }
-  return {v->getPos()[0], v->getPos()[1]};
-}
-
-void writeSortedVertices(std::ostream &out, const std::string &name,
-                         const std::list<ply_vertex *> &vertices) {
-  std::vector<const ply_vertex *> sorted(vertices.begin(), vertices.end());
-  std::sort(sorted.begin(), sorted.end(),
-            [](const ply_vertex *a, const ply_vertex *b) {
-              return posKey(a) < posKey(b);
-            });
-  out << name << ' ' << sorted.size() << '\n';
-  for (const ply_vertex *v : sorted) {
-    writePos(out, v);
-    out << '\n';
-  }
-}
-
-// Each cut set by x and y of its vertex, then its type, the pocket minima it
-// resolves, and its diagonals' end points in order.
-void writeSortedCutsets(std::ostream &out, const std::vector<c_cutset> &cutsets) {
-  std::vector<std::pair<std::vector<double>, std::string>> sorted;
-  for (const c_cutset &c : cutsets) {
-    std::vector<double> key = posKey(c.getV());
-    key.push_back(static_cast<double>(c.getType()));
-    key.push_back(static_cast<double>(c.getResolveSize()));
-    key.push_back(static_cast<double>(c.getDiagonals().size()));
-    for (const c_diagonal &d : c.getDiagonals()) {
-      for (const ply_vertex *v : {d.getV1(), d.getV2()}) {
-        const std::vector<double> p = posKey(v);
-        key.insert(key.end(), p.begin(), p.end());
-      }
-    }
-    std::ostringstream text;
-    text << "cutset type " << static_cast<int>(c.getType()) << " resolves "
-         << c.getResolveSize() << " v";
-    writePos(text, c.getV());
-    text << '\n';
-    writeDiagonals(text, " cutset_diagonals", c.getDiagonals());
-    sorted.emplace_back(std::move(key), text.str());
-  }
-  std::sort(sorted.begin(), sorted.end());
-  out << "cutsets " << sorted.size() << '\n';
-  for (const auto &c : sorted) {
-    out << c.second;
-  }
-}
-
-std::string decompose(const std::string &name, const cv::Mat &image,
-                      float tau_px = 20.0f) {
-  std::ostringstream out;
+Result decompose(const std::string &name, const cv::Mat &image,
+                 float tau_px = 20.0f) {
   DuDe_OpenCV_wrapper wrapper;
   wrapper.set_pixel_Tau(tau_px);
   wrapper.Decomposer(image.clone());
-  out << "map " << name << '\n';
-  out << "input_contour " << wrapper.Parent_contour.size() << '\n';
+  Result r;
+  r.name = name;
   for (const cv::Point &p : wrapper.Parent_contour) {
-    out << ' ' << p.x << ',' << p.y;
+    r.input_contour.push_back(pos(p));
   }
-  out << '\n';
-  writeSortedVertices(out, "pocket_minima", wrapper.dude.m_PMs);
-  writeVertices(out, "hole_pocket_minima", wrapper.dude.hole_PMs);
-  writeSortedCutsets(out, wrapper.dude.m_cutsets);
-  writeDiagonals(out, "cdt_diagonals", wrapper.dude.m_diagonals);
-  writeDiagonals(out, "cuts", wrapper.dude.m_cuts);
-  writeDiagonals(out, "accumulated_cuts",
-                 wrapper.draw_decoration.allAccumulatedCuts);
-  out << "regions " << wrapper.finalPolygonPieces.size() << '\n';
+  r.pocket_minima = points(wrapper.dude.m_PMs);
+  r.hole_pocket_minima = points(wrapper.dude.hole_PMs);
+  for (const c_cutset &c : wrapper.dude.m_cutsets) {
+    Cutset cs;
+    cs.has_v = c.getV() != nullptr;
+    if (cs.has_v) {
+      cs.v = pos(c.getV());
+    }
+    cs.type = static_cast<int>(c.getType());
+    cs.resolves = c.getResolveSize();
+    cs.diagonals = segments(c.getDiagonals());
+    r.cutsets.push_back(cs);
+  }
+  r.cdt_diagonals = segments(wrapper.dude.m_diagonals);
+  r.cuts = segments(wrapper.dude.m_cuts);
+  r.accumulated_cuts = segments(wrapper.draw_decoration.allAccumulatedCuts);
   for (c_polygon *piece : wrapper.finalPolygonPieces) {
-    out << "piece plys " << piece->size() << '\n';
+    std::vector<Ply> plys;
     for (c_ply &ply : *piece) {
-      out << " ply type " << static_cast<int>(ply.getType()) << " vertices "
-          << ply.getSize() << '\n';
+      Ply out;
+      out.type = static_cast<int>(ply.getType());
       ply_vertex *v = ply.getHead();
       do {
-        writePos(out, v);
+        out.vertices.push_back(pos(v));
         v = v->getNext();
       } while (v != ply.getHead());
-      out << '\n';
+      plys.push_back(out);
+    }
+    r.pieces.push_back(plys);
+  }
+  for (size_t i = 0; i < wrapper.Decomposed_contours.size(); ++i) {
+    Contour c;
+    for (const cv::Point &p : wrapper.Decomposed_contours[i]) {
+      c.points.push_back(pos(p));
+    }
+    c.centroid = pos(wrapper.contours_centroid[i]);
+    r.contours.push_back(c);
+  }
+  return r;
+}
+
+// ---- canonical form ---------------------------------------------------------
+
+Seg canonical(Seg s) {
+  if (s.second < s.first) {
+    std::swap(s.first, s.second);
+  }
+  return s;
+}
+
+std::vector<Seg> canonical(std::vector<Seg> segs) {
+  for (Seg &s : segs) {
+    s = canonical(s);
+  }
+  std::sort(segs.begin(), segs.end());
+  return segs;
+}
+
+// The cycle from its smallest vertex, towards the smaller neighbour; with a
+// repeated smallest vertex (or equal neighbours) the smallest of all those
+// sequences.
+std::vector<Pt> canonicalCycle(const std::vector<Pt> &cycle) {
+  if (cycle.empty()) {
+    return cycle;
+  }
+  const size_t n = cycle.size();
+  const Pt smallest = *std::min_element(cycle.begin(), cycle.end());
+  std::vector<Pt> best;
+  for (size_t start = 0; start < n; ++start) {
+    if (cycle[start] != smallest) {
+      continue;
+    }
+    for (int step : {1, -1}) {
+      std::vector<Pt> seq;
+      for (size_t k = 0; k < n; ++k) {
+        const long count = static_cast<long>(n);
+        long i = (static_cast<long>(start) + step * static_cast<long>(k)) % count;
+        seq.push_back(cycle[static_cast<size_t>(i < 0 ? i + count : i)]);
+      }
+      if (best.empty() || seq < best) {
+        best = seq;
+      }
     }
   }
-  out << "contours " << wrapper.Decomposed_contours.size() << '\n';
-  for (size_t i = 0; i < wrapper.Decomposed_contours.size(); ++i) {
-    out << " contour " << wrapper.Decomposed_contours[i].size() << " centroid "
-        << wrapper.contours_centroid[i].x << ',' << wrapper.contours_centroid[i].y
-        << '\n';
-    for (const cv::Point &p : wrapper.Decomposed_contours[i]) {
-      out << ' ' << p.x << ',' << p.y;
+  return best;
+}
+
+std::vector<Pt> sorted(std::vector<Pt> pts) {
+  std::sort(pts.begin(), pts.end());
+  return pts;
+}
+
+Result canonical(Result r) {
+  r.input_contour = canonicalCycle(r.input_contour);
+  r.pocket_minima = sorted(r.pocket_minima);
+  r.hole_pocket_minima = sorted(r.hole_pocket_minima);
+  for (Cutset &c : r.cutsets) {
+    c.diagonals = canonical(c.diagonals);
+  }
+  std::sort(r.cutsets.begin(), r.cutsets.end(), [](const Cutset &a, const Cutset &b) {
+    return std::tie(a.has_v, a.v, a.type, a.resolves, a.diagonals) <
+           std::tie(b.has_v, b.v, b.type, b.resolves, b.diagonals);
+  });
+  r.cdt_diagonals = canonical(r.cdt_diagonals);
+  r.cuts = canonical(r.cuts);
+  r.accumulated_cuts = canonical(r.accumulated_cuts);
+  auto plyLess = [](const Ply &a, const Ply &b) {
+    return std::tie(a.type, a.vertices) < std::tie(b.type, b.vertices);
+  };
+  for (std::vector<Ply> &piece : r.pieces) {
+    for (Ply &ply : piece) {
+      ply.vertices = canonicalCycle(ply.vertices);
+    }
+    std::sort(piece.begin(), piece.end(), plyLess);
+  }
+  std::sort(r.pieces.begin(), r.pieces.end(),
+            [&](const std::vector<Ply> &a, const std::vector<Ply> &b) {
+              return std::lexicographical_compare(a.begin(), a.end(), b.begin(),
+                                                  b.end(), plyLess);
+            });
+  for (Contour &c : r.contours) {
+    c.points = canonicalCycle(c.points);
+  }
+  std::sort(r.contours.begin(), r.contours.end(), [](const Contour &a, const Contour &b) {
+    return std::tie(a.points, a.centroid) < std::tie(b.points, b.centroid);
+  });
+  return r;
+}
+
+// ---- text ---------------------------------------------------------------------
+
+void write(std::ostream &out, const Pt &p) {
+  out << ' ' << std::hexfloat << p.first << ',' << p.second << std::defaultfloat;
+}
+
+void write(std::ostream &out, const std::string &name, const std::vector<Pt> &pts) {
+  out << name << ' ' << pts.size() << '\n';
+  for (const Pt &p : pts) {
+    write(out, p);
+  }
+  out << '\n';
+}
+
+void write(std::ostream &out, const std::string &name, const std::vector<Seg> &segs) {
+  out << name << ' ' << segs.size() << '\n';
+  for (const Seg &s : segs) {
+    write(out, s.first);
+    write(out, s.second);
+    out << '\n';
+  }
+}
+
+// The canonical form of `r` as text.
+std::string text(const Result &raw) {
+  const Result r = canonical(raw);
+  std::ostringstream out;
+  out << "map " << r.name << '\n';
+  write(out, "input_contour", r.input_contour);
+  write(out, "pocket_minima", r.pocket_minima);
+  write(out, "hole_pocket_minima", r.hole_pocket_minima);
+  out << "cutsets " << r.cutsets.size() << '\n';
+  for (const Cutset &c : r.cutsets) {
+    out << "cutset type " << c.type << " resolves " << c.resolves << " v";
+    if (c.has_v) {
+      write(out, c.v);
+    } else {
+      out << " null";
     }
     out << '\n';
+    write(out, " cutset_diagonals", c.diagonals);
+  }
+  write(out, "cdt_diagonals", r.cdt_diagonals);
+  write(out, "cuts", r.cuts);
+  write(out, "accumulated_cuts", r.accumulated_cuts);
+  out << "regions " << r.pieces.size() << '\n';
+  for (const std::vector<Ply> &piece : r.pieces) {
+    out << "piece plys " << piece.size() << '\n';
+    for (const Ply &ply : piece) {
+      write(out, " ply type " + std::to_string(ply.type) + " vertices", ply.vertices);
+    }
+  }
+  out << "contours " << r.contours.size() << '\n';
+  for (const Contour &c : r.contours) {
+    out << " centroid";
+    write(out, c.centroid);
+    out << '\n';
+    write(out, " contour", c.points);
   }
   return out.str();
 }
 
-std::string allMaps() {
-  std::string all;
+// ---- the maps -----------------------------------------------------------------
+
+std::vector<Result> allMaps() {
+  std::vector<Result> all;
   {  // a convex room (an octagon)
     cv::Mat image = cv::Mat::zeros(120, 160, CV_8UC1);
     const std::vector<cv::Point> octagon = {{40, 10}, {120, 10}, {150, 40},
                                             {150, 80}, {120, 110}, {40, 110},
                                             {10, 80}, {10, 40}};
     cv::fillConvexPoly(image, octagon, 255);
-    all += decompose("convex_octagon", image);
+    all.push_back(decompose("convex_octagon", image));
   }
   {  // a room without cuts (H03_ARoomWithoutCutsIsReleasedOnce)
     cv::Mat image = cv::Mat::zeros(120, 160, CV_8UC1);
     cv::rectangle(image, cv::Point(10, 10), cv::Point(150, 110), 255, -1);
-    all += decompose("room_without_cuts", image);
+    all.push_back(decompose("room_without_cuts", image));
   }
   {  // three rooms joined by two corridors (concave, two cuts or more)
     cv::Mat image = cv::Mat::zeros(120, 240, CV_8UC1);
@@ -489,13 +617,13 @@ std::string allMaps() {
     cv::rectangle(image, cv::Point(170, 10), cv::Point(230, 110), 255, -1);
     cv::rectangle(image, cv::Point(70, 50), cv::Point(90, 70), 255, -1);
     cv::rectangle(image, cv::Point(150, 30), cv::Point(170, 45), 255, -1);
-    all += decompose("three_rooms", image);
+    all.push_back(decompose("three_rooms", image));
   }
   {  // a room with a hole (an obstacle in the middle)
     cv::Mat image = cv::Mat::zeros(160, 200, CV_8UC1);
     cv::rectangle(image, cv::Point(10, 10), cv::Point(190, 150), 255, -1);
     cv::rectangle(image, cv::Point(80, 60), cv::Point(120, 100), 0, -1);
-    all += decompose("room_with_hole", image);
+    all.push_back(decompose("room_with_hole", image));
   }
   {  // a real map: the free cells of Freiburg52_scan, opened (5 x 5) like
      // the node's cleaning removes thin noise. At tau 20 px DuDe crashes on
@@ -511,15 +639,32 @@ std::string allMaps() {
     cv::morphologyEx(free_space, free_space, cv::MORPH_OPEN,
                      cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5)));
     // tau 2.7 m at 0.05 m per pixel, the evaluation setting (54 px)
-    all += decompose("Freiburg52_scan", free_space, 54.0f);
+    all.push_back(decompose("Freiburg52_scan", free_space, 54.0f));
   }
   return all;
+}
+
+std::string text(const std::vector<Result> &all) {
+  std::string out;
+  for (const Result &r : all) {
+    out += text(r);
+  }
+  return out;
+}
+
+const Result &byName(const std::vector<Result> &all, const std::string &name) {
+  for (const Result &r : all) {
+    if (r.name == name) {
+      return r;
+    }
+  }
+  throw std::runtime_error("no map " + name);
 }
 
 }  // namespace dude_reference
 
 TEST(DudeReference, TheDecompositionOfFixedMapsIsUnchanged) {
-  const std::string actual = dude_reference::allMaps();
+  const std::string actual = dude_reference::text(dude_reference::allMaps());
   std::ofstream("dude_decomposition_reference.actual.txt") << actual;
   const std::filesystem::path golden =
       std::filesystem::path(__FILE__).parent_path() /
@@ -533,19 +678,43 @@ TEST(DudeReference, TheDecompositionOfFixedMapsIsUnchanged) {
       << "; see dude_decomposition_reference.actual.txt";
 }
 
-TEST(DudeReference, TwoRunsGiveTheSameResult) {
-  EXPECT_TRUE(dude_reference::allMaps() == dude_reference::allMaps());
+// A second pass in the same process (after the first decompositions) gives
+// the same canonical result.
+TEST(DudeReference, ASecondPassGivesTheSameResult) {
+  const std::string first = dude_reference::text(dude_reference::allMaps());
+  EXPECT_TRUE(dude_reference::text(dude_reference::allMaps()) == first);
 }
 
 TEST(DudeReference, TheMapsCoverCutsAndAHole) {
-  const std::string all = dude_reference::allMaps();
-  EXPECT_NE(all.find("map room_with_hole"), std::string::npos);
-  // three_rooms needs two cuts or more (the section up to the next map).
-  const size_t start = all.find("map three_rooms");
-  const size_t end = all.find("map room_with_hole");
-  ASSERT_NE(start, std::string::npos);
-  const std::string three = all.substr(start, end - start);
-  const size_t cuts = three.find("\ncuts ");
-  ASSERT_NE(cuts, std::string::npos);
-  EXPECT_GE(std::stoi(three.substr(cuts + 6)), 2);
+  const auto all = dude_reference::allMaps();
+  EXPECT_GE(dude_reference::byName(all, "three_rooms").cuts.size(), 2u);
+  EXPECT_FALSE(dude_reference::byName(all, "room_with_hole").hole_pocket_minima.empty());
+  for (const auto &r : all) {
+    EXPECT_FALSE(r.pieces.empty()) << r.name;
+  }
+}
+
+// Negative control: the canonical comparison still sees a vertex moved by
+// one ulp and a missing cut, and ignores a pure reorder of the pieces.
+TEST(DudeReference, TheComparisonDetectsRealChanges) {
+  const dude_reference::Result r =
+      dude_reference::byName(dude_reference::allMaps(), "three_rooms");
+  const std::string reference = dude_reference::text(r);
+  ASSERT_GE(r.pieces.size(), 2u);
+  ASSERT_FALSE(r.cuts.empty());
+
+  dude_reference::Result moved = r;
+  double &x = moved.pieces[0][0].vertices[0].first;
+  x = std::nextafter(x, HUGE_VAL);
+  EXPECT_NE(dude_reference::text(moved), reference);
+
+  dude_reference::Result missing_cut = r;
+  missing_cut.cuts.pop_back();
+  EXPECT_NE(dude_reference::text(missing_cut), reference);
+
+  dude_reference::Result reordered = r;
+  std::swap(reordered.pieces[0], reordered.pieces[1]);
+  std::reverse(reordered.cuts.begin(), reordered.cuts.end());
+  std::swap(reordered.cuts[0].first, reordered.cuts[0].second);
+  EXPECT_EQ(dude_reference::text(reordered), reference);
 }

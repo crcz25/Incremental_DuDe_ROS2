@@ -220,7 +220,16 @@ if(BUILD_TESTING)
   # it gets its own ROS_DOMAIN_ID.
   find_package(ament_cmake_ros REQUIRED)
   ament_add_ros_isolated_gtest(test_inc_dude_node test/test_inc_dude_node.cpp
-    ${DUDE_COMMON_SOURCES} TIMEOUT 300)
+    ${DUDE_COMMON_SOURCES} TIMEOUT 300 ENV "GTEST_FILTER=-DudeReference.*")
+  # DudeReference.* (the DuDe reference output) runs in a process of its own:
+  # DuDe's results depend on the heap layout that earlier decompositions in
+  # the same process leave.
+  ament_add_test(test_dude_reference
+    COMMAND "$<TARGET_FILE:test_inc_dude_node>"
+      "--gtest_output=xml:${AMENT_TEST_RESULTS_DIR}/${PROJECT_NAME}/test_dude_reference.gtest.xml"
+    RESULT_FILE "${AMENT_TEST_RESULTS_DIR}/${PROJECT_NAME}/test_dude_reference.gtest.xml"
+    ENV "GTEST_FILTER=DudeReference.*"
+    TIMEOUT 300)
   ament_target_dependencies(test_inc_dude_node ${ROS_DEPENDENCIES})
   add_dependencies(test_inc_dude_node third_party_dependencies)
   target_link_options(test_inc_dude_node PRIVATE -no-pie)
