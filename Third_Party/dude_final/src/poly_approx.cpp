@@ -294,6 +294,10 @@ void approximate(const c_plyline &plyline, double tau,
     // approximate
     float error = approximate(chains, new_approx);
     approx = new_approx;
+    // PATCH(dude-4b): the chains of this pass (new c_chain, linked to each
+    // other) were never freed; nothing uses them after approximate()
+    for (size_t c = 0; c < chains.size(); c++)
+      delete chains[c];
     if (error < tau)
       break;
   } while (true);
