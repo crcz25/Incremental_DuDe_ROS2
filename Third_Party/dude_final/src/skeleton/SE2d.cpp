@@ -5,6 +5,7 @@
 #include "dude.h"
 #include "dude_cut.h"
 #include "polygon.h"
+#include <set> // PATCH(dude-3): for destroy()
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -268,6 +269,18 @@ void SE2d::UpdateSkeleton() {
 
 void SE2d::destroy() {
   typedef list<se_m *>::iterator MIT;
+  // PATCH(dude-3): an se_m that a split replaced left todo_list but stays in
+  // ply2MouthMap (insert() keeps the old value); free each of those once.
+  set<se_m *> listed(todo_list.begin(), todo_list.end());
+  listed.insert(done_list.begin(), done_list.end());
+  set<se_m *> replaced;
+  for (map<c_polygon *, se_m *>::iterator i = ply2MouthMap.begin();
+       i != ply2MouthMap.end(); i++)
+    if (i->second != NULL && listed.count(i->second) == 0)
+      replaced.insert(i->second);
+  for (set<se_m *>::iterator i = replaced.begin(); i != replaced.end(); i++)
+    delete *i;
+  ply2MouthMap.clear();
   {
     for (MIT im = todo_list.begin(); im != todo_list.end(); im++)
       delete *im;
