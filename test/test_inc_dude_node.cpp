@@ -45,6 +45,7 @@
 #include <filesystem>
 #include <fstream>
 #include <list>
+#include <set>
 #include <sstream>
 #include <utility>
 #include <optional>
@@ -399,6 +400,8 @@ struct Result {
   std::vector<Seg> cdt_diagonals, cuts, accumulated_cuts;
   std::vector<std::vector<Ply>> pieces;
   std::vector<Contour> contours;
+  // Not in the dumps: the holes the wrapper gives DuDe (the area check).
+  std::vector<std::vector<Pt>> input_holes;
 };
 
 Pt pos(const ply_vertex *v) { return {v->getPos()[0], v->getPos()[1]}; }
@@ -420,6 +423,39 @@ std::vector<Pt> points(const std::list<ply_vertex *> &vertices) {
   return out;
 }
 
+// The holes DuDe_OpenCV_wrapper::Decomposer gives DuDe, found by its steps:
+// the children of the largest contour with an area above `area_threshold`.
+std::vector<std::vector<Pt>> inputHoles(const cv::Mat &image, float area_threshold) {
+  std::vector<std::vector<cv::Point>> contours;
+  std::vector<cv::Vec4i> hierarchy;
+  cv::findContours(image.clone(), contours, hierarchy, cv::RETR_TREE,
+                   cv::CHAIN_APPROX_SIMPLE);
+  std::vector<std::vector<Pt>> holes;
+  if (contours.empty()) {
+    return holes;
+  }
+  int big = 0;
+  float big_area = cv::contourArea(contours[0]);
+  for (int i = 0; hierarchy[i][0] != -1;) {
+    i = hierarchy[i][0];
+    const float area = cv::contourArea(contours[i]);
+    if (area > big_area) {
+      big_area = area;
+      big = i;
+    }
+  }
+  for (int c = hierarchy[big][2]; c != -1; c = hierarchy[c][0]) {
+    const float area = cv::contourArea(contours[c]);
+    if (area > area_threshold) {
+      holes.emplace_back();
+      for (const cv::Point &p : contours[c]) {
+        holes.back().push_back(pos(p));
+      }
+    }
+  }
+  return holes;
+}
+
 Result decompose(const std::string &name, const cv::Mat &image,
                  float tau_px = 20.0f) {
   DuDe_OpenCV_wrapper wrapper;
@@ -427,6 +463,7 @@ Result decompose(const std::string &name, const cv::Mat &image,
   wrapper.Decomposer(image.clone());
   Result r;
   r.name = name;
+  r.input_holes = inputHoles(image, wrapper.Area_threshold);
   for (const cv::Point &p : wrapper.Parent_contour) {
     r.input_contour.push_back(pos(p));
   }
@@ -625,6 +662,29 @@ std::string text(const Result &raw) { return exactText(canonical(raw)); }
 
 // ---- the maps -----------------------------------------------------------------
 
+// The free cells of Freiburg52_scan, opened (5 x 5) like the node's cleaning
+// removes thin noise.
+cv::Mat freiburg52FreeSpace() {
+  const std::filesystem::path map =
+      std::filesystem::path(__FILE__).parent_path().parent_path() /
+      "maps/Room_Segmentation/all_maps/Freiburg52_scan.png";
+  const cv::Mat gray = cv::imread(map.string(), cv::IMREAD_GRAYSCALE);
+  if (gray.empty()) {
+    throw std::runtime_error("cannot read " + map.string());
+  }
+  cv::Mat free_space = gray > 250;
+  cv::morphologyEx(free_space, free_space, cv::MORPH_OPEN,
+                   cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5)));
+  return free_space;
+}
+
+// DP-1 / DP-10: Freiburg52 at tau 20 px. Unpatched DuDe (and DuDe with the
+// round 1 patches) reads a freed BPC in c_dude::is_bridge_breaking on this
+// map. Its own golden files (not the eight maps').
+Result freiburg52Tau20() {
+  return decompose("Freiburg52_scan_tau20", freiburg52FreeSpace(), 20.0f);
+}
+
 std::vector<std::function<Result()>> mapMakers() {
   std::vector<std::function<Result()>> all;
   all.push_back([] {  // a convex room (an octagon)
@@ -684,21 +744,9 @@ std::vector<std::function<Result()>> mapMakers() {
     }
     return decompose("room_grid", image);
   });
-  all.push_back([] {  // a real map: the free cells of Freiburg52_scan, opened (5 x 5) like
-     // the node's cleaning removes thin noise. At tau 20 px DuDe crashes on
-     // this map in c_dude::is_bridge_breaking (unpatched DuDe as well).
-    const std::filesystem::path map =
-        std::filesystem::path(__FILE__).parent_path().parent_path() /
-        "maps/Room_Segmentation/all_maps/Freiburg52_scan.png";
-    const cv::Mat gray = cv::imread(map.string(), cv::IMREAD_GRAYSCALE);
-    if (gray.empty()) {
-      throw std::runtime_error("cannot read " + map.string());
-    }
-    cv::Mat free_space = gray > 250;
-    cv::morphologyEx(free_space, free_space, cv::MORPH_OPEN,
-                     cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5)));
+  all.push_back([] {  // a real map: Freiburg52_scan (freiburg52FreeSpace)
     // tau 2.7 m at 0.05 m per pixel, the evaluation setting (54 px)
-    return decompose("Freiburg52_scan", free_space, 54.0f);
+    return decompose("Freiburg52_scan", freiburg52FreeSpace(), 54.0f);
   });
   return all;
 }
@@ -799,6 +847,84 @@ const Result &byName(const std::vector<Result> &all, const std::string &name) {
     }
   }
   throw std::runtime_error("no map " + name);
+}
+
+// ---- the area check -------------------------------------------------------------
+
+double area(const std::vector<Pt> &cycle) {  // shoelace, unsigned
+  double twice = 0;
+  for (size_t i = 0; i < cycle.size(); ++i) {
+    const Pt &a = cycle[i];
+    const Pt &b = cycle[(i + 1) % cycle.size()];
+    twice += a.first * b.second - b.first * a.second;
+  }
+  return std::abs(twice) / 2;
+}
+
+// The pieces against the free space DuDe was given: the input contour minus
+// its holes. DuDe drops a hole it finds ignorable (c_dude::buildBPC, D4f; at
+// any level of the decomposition), so its area stays in the pieces; such a
+// hole has none of its vertices in any piece. A hole with only some of its
+// vertices in the pieces is counted in `partial` (the check then fails).
+struct Coverage {
+  double pieces{0};      // the sum of the pieces (outer plys minus holes)
+  double free_space{0};  // the input contour minus all input holes
+  double expected{0};    // the input contour minus the holes kept
+  size_t holes{0}, dropped{0}, partial{0};
+};
+
+Coverage coverage(const Result &r) {
+  Coverage c;
+  std::set<Pt> piece_vertices;
+  for (const std::vector<Ply> &piece : r.pieces) {
+    for (const Ply &ply : piece) {
+      const double a = area(ply.vertices);
+      c.pieces += ply.type == static_cast<int>(c_ply::PIN) ? -a : a;
+      piece_vertices.insert(ply.vertices.begin(), ply.vertices.end());
+    }
+  }
+  c.free_space = c.expected = area(r.input_contour);
+  for (const std::vector<Pt> &hole : r.input_holes) {
+    size_t found = 0;
+    for (const Pt &p : hole) {
+      found += piece_vertices.count(p);
+    }
+    ++c.holes;
+    c.free_space -= area(hole);
+    if (found == 0) {
+      ++c.dropped;
+    } else {
+      c.expected -= area(hole);
+      if (found != hole.size()) {
+        ++c.partial;
+      }
+    }
+  }
+  return c;
+}
+
+// The pieces cover the free space DuDe kept, within a relative 1e-9: no
+// piece is missing or doubled (the cuts themselves are not checked).
+void expectCoverage(const Result &r) {
+  const Coverage c = coverage(r);
+  EXPECT_EQ(c.partial, 0u) << r.name;
+  EXPECT_LE(std::abs(c.pieces - c.expected), 1e-9 * c.expected)
+      << r.name << ": pieces " << c.pieces << ", input contour minus the "
+      << c.holes - c.dropped << " holes kept " << c.expected << " (minus all "
+      << c.holes << " holes " << c.free_space << ")";
+}
+
+// `actual` equals the golden file test/golden/<golden>; it is also written
+// to <golden without .txt>.actual.txt in the working directory.
+void expectGolden(const std::string &actual, const std::string &golden) {
+  std::ofstream(golden.substr(0, golden.size() - 4) + ".actual.txt") << actual;
+  const std::filesystem::path path =
+      std::filesystem::path(__FILE__).parent_path() / "golden" / golden;
+  std::ifstream in(path);
+  ASSERT_TRUE(in) << "missing " << path;
+  std::stringstream expected;
+  expected << in.rdbuf();
+  EXPECT_TRUE(expected.str() == actual) << "differs from " << path;
 }
 
 }  // namespace dude_reference
@@ -911,4 +1037,32 @@ TEST(DudeReference, TheGeometryDoesNotDependOnTheUnsortedCdtEdgeOrder) {
     EXPECT_TRUE(dude_reference::text(dude_reference::allMaps()) == expected)
         << "seed " << seed;
   }
+}
+
+// The pieces of every map cover the free space DuDe kept (expectCoverage).
+TEST(DudeReference, ThePiecesCoverTheFreeSpace) {
+  for (const dude_reference::Result &r : dude_reference::allMaps()) {
+    const dude_reference::Coverage c = dude_reference::coverage(r);
+    std::cout << r.name << ": pieces " << c.pieces << ", expected " << c.expected
+              << ", free space " << c.free_space << ", holes " << c.holes
+              << ", dropped " << c.dropped << ", partial " << c.partial << std::endl;
+    dude_reference::expectCoverage(r);
+  }
+}
+
+// DP-1: Freiburg52 at tau 20 px, canonical form and area check, against
+// test/golden/dude_decomposition_reference_tau20.txt.
+TEST(DudeReference, DISABLED_TheTau20DecompositionIsUnchanged) {
+  const dude_reference::Result r = dude_reference::freiburg52Tau20();
+  dude_reference::expectCoverage(r);
+  dude_reference::expectGolden(dude_reference::text(r),
+                               "dude_decomposition_reference_tau20.txt");
+}
+
+// DP-1: the exact result of Freiburg52 at tau 20 px, also after other
+// decompositions or allocations (DUDE_REFERENCE_WARMUP, _PREALLOC).
+TEST(DudeReference, DISABLED_TheTau20ExactDecompositionIsUnchanged) {
+  dude_reference::applyHistoryHooks();
+  dude_reference::expectGolden(dude_reference::exactText(dude_reference::freiburg52Tau20()),
+                               "dude_decomposition_exact_reference_tau20.txt");
 }
