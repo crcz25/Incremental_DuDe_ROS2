@@ -18,7 +18,13 @@ c_BPC::c_BPC() {
   m_pre = NULL;
 }
 
-c_BPC::~c_BPC() { int a = 1; }
+c_BPC::~c_BPC() {
+  int a = 1;
+  // PATCH(dude-2): a BPC owns its kids (decompose_bridge creates them with
+  // new; insert2tree keeps each in exactly one m_kids); they were never freed
+  for (list<c_BPC *>::iterator i = m_kids.begin(); i != m_kids.end(); i++)
+    delete *i;
+}
 
 //
 // build: determine the order of bridge vertices and compute the length of
