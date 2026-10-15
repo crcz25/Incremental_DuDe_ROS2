@@ -417,6 +417,11 @@ void c_BPC::determineConcavity_real(float tau, bool reducePMs) {
         m_concavities.push_back(*i);
     }
   }
+  // PATCH(dude-4a): the pocket copies made for visualization (seg2Ply, new
+  // vertices nothing else points to) were never freed
+  tmpply.destroy();
+  for (size_t i = 0; i < tmpChildren.size(); i++)
+    tmpChildren[i].destroy();
 }
 void c_BPC::determineConcavity(float tau, bool reducePMs) {
   determineConcavity_real(tau, reducePMs);
