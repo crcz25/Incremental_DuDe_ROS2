@@ -69,10 +69,10 @@ set(FREEGLUT_BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
 set(FREEGLUT_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
 add_subdirectory(Third_Party/freeglut EXCLUDE_FROM_ALL)
 
-add_library(cgal_headers INTERFACE)
-target_include_directories(cgal_headers INTERFACE
-  ${PROJECT_SOURCE_DIR}/Third_Party/cgal/include
-)
+# CGAL is header-only and comes from the system package libcgal-dev (5.4 on
+# jammy; docker/Dockerfile, the CI workflow). Third_Party/cgal is the upstream
+# development tree, which has no include/ folder, so it is not used. The DuDe
+# golden files were made with CGAL 5.4.
 
 find_path(GMP_INCLUDE_DIR gmp.h REQUIRED)
 find_library(GMP_LIBRARY gmp REQUIRED)
@@ -118,13 +118,12 @@ add_custom_target(third_party_dependencies
   DEPENDS freeglut_static mpfr_external
 )
 
-include_directories(
+set(DUDE_INCLUDE_DIRS
   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final
   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src
   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/mathtool
   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src/skeleton
   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src/draw
-  ${PROJECT_SOURCE_DIR}/include
 )
 
 file(GLOB DuDe_SOURCES
@@ -134,10 +133,28 @@ file(GLOB DuDe_SOURCES
   ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/src/draw/*.cpp
 )
 
-set(DUDE_COMMON_SOURCES
-  include/wrapper.cpp
-  include/inc_decomp.cpp
+set(FIST_LIBRARIES
+  ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/FIST/libFIST.linux64.a
+)
+
+# M-32: DuDe and its wrapper are compiled once, into one static library that
+# the node, the evaluation node and their tests link. DuDe is vendored code:
+# it is compiled without warnings (-w), and its headers are SYSTEM headers for
+# first-party code. Its sources are not changed (patches/dude/).
+set_source_files_properties(${DuDe_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
+add_library(inc_dude_dude STATIC
+  src/wrapper.cpp
+  src/inc_decomp.cpp
   ${DuDe_SOURCES}
+)
+target_include_directories(inc_dude_dude SYSTEM PUBLIC ${DUDE_INCLUDE_DIRS})
+target_include_directories(inc_dude_dude PUBLIC ${PROJECT_SOURCE_DIR}/include)
+add_dependencies(inc_dude_dude third_party_dependencies)
+target_link_libraries(inc_dude_dude PUBLIC
+  ${FIST_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+  mpfr_static
+  ${GMP_LIBRARY}
 )
 
 set(ROS_DEPENDENCIES
@@ -153,22 +170,11 @@ set(ROS_DEPENDENCIES
   image_transport
 )
 
-set(FIST_LIBRARIES
-  ${PROJECT_SOURCE_DIR}/Third_Party/dude_final/FIST/libFIST.linux64.a
-)
-
 function(add_inc_dude_executable target source)
-  add_executable(${target} ${source} ${DUDE_COMMON_SOURCES})
+  add_executable(${target} ${source})
   ament_target_dependencies(${target} ${ROS_DEPENDENCIES})
-  add_dependencies(${target} third_party_dependencies)
   target_link_options(${target} PRIVATE -no-pie)
-  target_link_libraries(${target}
-    ${FIST_LIBRARIES}
-    ${OpenCV_LIBRARIES}
-    cgal_headers
-    mpfr_static
-    ${GMP_LIBRARY}
-  )
+  target_link_libraries(${target} inc_dude_dude)
 endfunction()
 
 add_inc_dude_executable(inc_dude_node src/inc_dude.cpp)
@@ -220,7 +226,7 @@ if(BUILD_TESTING)
   # it gets its own ROS_DOMAIN_ID.
   find_package(ament_cmake_ros REQUIRED)
   ament_add_ros_isolated_gtest(test_inc_dude_node test/test_inc_dude_node.cpp
-    ${DUDE_COMMON_SOURCES} TIMEOUT 300 ENV "GTEST_FILTER=-DudeReference.*")
+    TIMEOUT 300 ENV "GTEST_FILTER=-DudeReference.*")
   # DudeReference.* (the DuDe reference output) runs in a process of its own:
   # DuDe's results depend on the heap layout that earlier decompositions in
   # the same process leave.
@@ -231,32 +237,20 @@ if(BUILD_TESTING)
     ENV "GTEST_FILTER=DudeReference.*"
     TIMEOUT 300)
   ament_target_dependencies(test_inc_dude_node ${ROS_DEPENDENCIES})
-  add_dependencies(test_inc_dude_node third_party_dependencies)
   target_link_options(test_inc_dude_node PRIVATE -no-pie)
   target_link_libraries(test_inc_dude_node
     inc_dude_region_msgs
     inc_dude_save_path
-    ${FIST_LIBRARIES}
-    ${OpenCV_LIBRARIES}
-    cgal_headers
-    mpfr_static
-    ${GMP_LIBRARY}
+    inc_dude_dude
   )
 
   # The evaluation node: test/test_evaluation_node.cpp compiles
   # src/evaluation.cpp with main() renamed, so it links like evaluation.
   ament_add_ros_isolated_gtest(test_evaluation_node test/test_evaluation_node.cpp
-    ${DUDE_COMMON_SOURCES} TIMEOUT 300)
+    TIMEOUT 300)
   ament_target_dependencies(test_evaluation_node ${ROS_DEPENDENCIES})
-  add_dependencies(test_evaluation_node third_party_dependencies)
   target_link_options(test_evaluation_node PRIVATE -no-pie)
-  target_link_libraries(test_evaluation_node
-    ${FIST_LIBRARIES}
-    ${OpenCV_LIBRARIES}
-    cgal_headers
-    mpfr_static
-    ${GMP_LIBRARY}
-  )
+  target_link_libraries(test_evaluation_node inc_dude_dude)
 
   # Static analysis, opt-in with -DENABLE_LINT=ON (tools/ci/run_ci.sh): the
   # default colcon test runs no lint test.

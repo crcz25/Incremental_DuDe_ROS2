@@ -136,11 +136,12 @@ the unpatched one is +161 / −12.
 
 ## Not DuDe patches
 
-- `include/wrapper.cpp` clears DuDe's global `g_points` (`poly_approx.cpp`)
-  with the decoration (E3, DP-5; first-party, no DuDe change).
+- `src/wrapper.cpp` (`include/wrapper.cpp` before L-17) clears DuDe's
+  global `g_points` (`poly_approx.cpp`) with the decoration (E3, DP-5;
+  first-party, no DuDe change).
 - `PERMISSION.md` records the origin of DuDe and the permission to modify
   it.
 
-The first-party side (not a DuDe patch): `include/wrapper.cpp` clears
+The first-party side (not a DuDe patch): `src/wrapper.cpp` clears
 DuDe's global `draw_decoration` (`allFeaturePMs`, `allFeatureConcavities`)
 around each decomposition and in its destructor (D5, P4-N8).
