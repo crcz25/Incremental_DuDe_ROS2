@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <list>
 #include <set>
 #include <sstream>
@@ -206,6 +207,113 @@ TEST_F(IncDudeNode, N1_AMapWithoutFreeSpaceDoesNotThrow) {
 TEST_F(IncDudeNode, N1_AGrownMapWithoutFreeSpaceDoesNotThrow) {
   node_->mapCallback(twoRoomMap());
   EXPECT_NO_THROW(node_->mapCallback(uniformMap(100, 200, 150)));
+}
+
+namespace {
+
+// A node whose parameters are `overrides` (and the suite's global ones).
+std::shared_ptr<ROS_handler> nodeWith(
+    const std::vector<rclcpp::Parameter> &overrides) {
+  return std::make_shared<ROS_handler>(
+      "map", 3.0f, rclcpp::NodeOptions().parameter_overrides(overrides));
+}
+
+// The message of the std::invalid_argument that creating such a node
+// throws; empty when it is created.
+std::string rejection(const std::vector<rclcpp::Parameter> &overrides) {
+  try {
+    nodeWith(overrides);
+  } catch (const std::invalid_argument &e) {
+    return e.what();
+  }
+  return "";
+}
+
+void expectRejected(const std::string &name, const rclcpp::ParameterValue &value) {
+  const std::string message = rejection({rclcpp::Parameter(name, value)});
+  EXPECT_NE(message.find("'" + name + "'"), std::string::npos)
+      << name << " = " << rclcpp::to_string(value) << ": \"" << message << "\"";
+  EXPECT_NE(message.find("range"), std::string::npos) << name << ": " << message;
+}
+
+const double kNaN = std::numeric_limits<double>::quiet_NaN();
+
+}  // namespace
+
+// M-24: the numeric parameters have a range. A value outside it stops the
+// node at start with the name, the value and the range; the defaults and the
+// shipped parameter file are inside.
+TEST_F(IncDudeNode, M24_TheShippedParameterFileLoads) {
+  std::shared_ptr<ROS_handler> node;
+  ASSERT_NO_THROW(node = std::make_shared<ROS_handler>(
+                      "map", 3.0f,
+                      rclcpp::NodeOptions().arguments(
+                          {"--ros-args", "--params-file", INC_DUDE_PARAMS_FILE})));
+  EXPECT_DOUBLE_EQ(node->get_parameter("decomp_threshold").as_double(), 2.0);
+  EXPECT_EQ(node->get_parameter("obstacle_dilation_iterations").as_int(), 4);
+}
+
+TEST_F(IncDudeNode, M24_TheDefaultsAreUnchanged) {
+  const auto node = nodeWith({});
+  EXPECT_DOUBLE_EQ(node->get_parameter("decomp_threshold").as_double(), 3.0);
+  EXPECT_EQ(node->get_parameter("publish_period_ms").as_int(), 500);
+  EXPECT_EQ(node->get_parameter("valid_space_threshold").as_int(), 101);
+  EXPECT_EQ(node->get_parameter("free_space_threshold").as_int(), 10);
+  EXPECT_EQ(node->get_parameter("occupied_min_threshold").as_int(), 90);
+  EXPECT_EQ(node->get_parameter("occupied_max_threshold").as_int(), 100);
+  EXPECT_EQ(node->get_parameter("obstacle_filter_size").as_int(), 2);
+  EXPECT_EQ(node->get_parameter("free_space_filter_size").as_int(), 10);
+  EXPECT_EQ(node->get_parameter("obstacle_dilation_iterations").as_int(), 4);
+  EXPECT_DOUBLE_EQ(node->get_parameter("offline_image_resolution").as_double(), 0.05);
+  EXPECT_EQ(node->get_parameter("offline_free_threshold").as_int(), 250);
+  const inc_dude::TrackerConfig c;
+  EXPECT_DOUBLE_EQ(
+      node->get_parameter("region_tracking.gate_min_containment").as_double(),
+      c.gate_min_containment);
+  EXPECT_EQ(node->get_parameter("region_tracking.max_missed_updates").as_int(),
+            c.max_missed_updates);
+}
+
+TEST_F(IncDudeNode, M24_ImageParametersOutsideTheirRangeAreRejected) {
+  expectRejected("decomp_threshold", rclcpp::ParameterValue(0.0));
+  expectRejected("decomp_threshold", rclcpp::ParameterValue(kNaN));
+  expectRejected("publish_period_ms", rclcpp::ParameterValue(0));
+  expectRejected("valid_space_threshold", rclcpp::ParameterValue(300));
+  expectRejected("free_space_threshold", rclcpp::ParameterValue(-1));
+  expectRejected("occupied_min_threshold", rclcpp::ParameterValue(256));
+  expectRejected("occupied_max_threshold", rclcpp::ParameterValue(-5));
+  expectRejected("obstacle_filter_size", rclcpp::ParameterValue(0));
+  expectRejected("free_space_filter_size", rclcpp::ParameterValue(0));
+  expectRejected("obstacle_dilation_iterations", rclcpp::ParameterValue(-1));
+  expectRejected("offline_image_resolution", rclcpp::ParameterValue(0.0));
+  expectRejected("offline_free_threshold", rclcpp::ParameterValue(256));
+  const std::string message =
+      rejection({rclcpp::Parameter("occupied_min_threshold", 100),
+                 rclcpp::Parameter("occupied_max_threshold", 90)});
+  EXPECT_NE(message.find("occupied_min_threshold"), std::string::npos) << message;
+  EXPECT_NE(message.find("occupied_max_threshold"), std::string::npos) << message;
+}
+
+TEST_F(IncDudeNode, M24_RegionTrackingParametersOutsideTheirRangeAreRejected) {
+  const std::string p = "region_tracking.";
+  expectRejected(p + "adjacency_distance_cells", rclcpp::ParameterValue(-1.0));
+  expectRejected(p + "adjacency_min_contact_m", rclcpp::ParameterValue(kNaN));
+  expectRejected(p + "min_region_area_m2", rclcpp::ParameterValue(-0.5));
+  expectRejected(p + "overlap_sample_step_m", rclcpp::ParameterValue(kNaN));
+  expectRejected(p + "gate_min_containment", rclcpp::ParameterValue(1.5));
+  expectRejected(p + "gate_centroid_distance_m", rclcpp::ParameterValue(-1.0));
+  expectRejected(p + "gate_min_area_ratio", rclcpp::ParameterValue(-0.1));
+  expectRejected(p + "weight_iou", rclcpp::ParameterValue(-1.0));
+  expectRejected(p + "weight_containment", rclcpp::ParameterValue(kNaN));
+  expectRejected(p + "weight_centroid", rclcpp::ParameterValue(-1.0));
+  expectRejected(p + "weight_area", rclcpp::ParameterValue(-1.0));
+  expectRejected(p + "centroid_distance_scale_m", rclcpp::ParameterValue(0.0));
+  expectRejected(p + "split_merge_min_fraction", rclcpp::ParameterValue(2.0));
+  expectRejected(p + "retire_min_coverage", rclcpp::ParameterValue(-1.0));
+  expectRejected(p + "max_missed_updates", rclcpp::ParameterValue(-1));
+  expectRejected(p + "max_area_loss_fraction", rclcpp::ParameterValue(1.5));
+  expectRejected(p + "max_region_overlap_fraction", rclcpp::ParameterValue(-0.5));
+  expectRejected(p + "max_consecutive_rejections", rclcpp::ParameterValue(-1));
 }
 
 // H-01: the save names the files; a name that leaves the output directory

@@ -27,9 +27,35 @@
 
 #include <chrono>
 #include <functional>
+#include <limits>
+#include <sstream>
 #include <cmath>
 #include <memory>
 #include <stdexcept>
+
+namespace {
+
+// M-24: the range of a numeric parameter (as semantic_perception does, M-14):
+// declared on its descriptor, so a later set_parameters outside it is refused
+// too, and checked at start. A value outside it, or a NaN, stops the node
+// with a std::invalid_argument that names the parameter, the value and the
+// range. The bounds hold every default and the shipped parameter file.
+constexpr int64_t kMaxInt = std::numeric_limits<int>::max();
+
+template <typename T> std::string rangeText(T from, T to) {
+  std::ostringstream text;
+  text << "[" << from << ", " << to << "]";
+  return text.str();
+}
+
+[[noreturn]] void throwOutOfRange(const std::string &name,
+                                  const std::string &value,
+                                  const std::string &range) {
+  throw std::invalid_argument("Parameter '" + name + "' = " + value +
+                              " is outside its range " + range);
+}
+
+} // namespace
 
 class ROS_handler : public rclcpp::Node {
 
@@ -77,11 +103,55 @@ class ROS_handler : public rclcpp::Node {
   std::string grid_frame_id_;
   inc_dude::GridGeometry grid_;
 
+  // The value of an override of `name`, for the out-of-range message.
+  std::string overrideText(const std::string &name) {
+    const auto &overrides =
+        this->get_node_parameters_interface()->get_parameter_overrides();
+    const auto it = overrides.find(name);
+    return it == overrides.end() ? "?" : rclcpp::to_string(it->second);
+  }
+
+  int64_t declareInteger(const std::string &name, int64_t value, int64_t from,
+                         int64_t to) {
+    rcl_interfaces::msg::ParameterDescriptor descriptor;
+    rcl_interfaces::msg::IntegerRange range;
+    range.from_value = from;
+    range.to_value = to;
+    range.step = 0;
+    descriptor.integer_range.push_back(range);
+    try {
+      return this->declare_parameter<int64_t>(name, value, descriptor);
+    } catch (const rclcpp::exceptions::InvalidParameterValueException &) {
+      throwOutOfRange(name, overrideText(name), rangeText(from, to));
+    }
+  }
+
+  double declareFloating(const std::string &name, double value, double from,
+                         double to) {
+    rcl_interfaces::msg::ParameterDescriptor descriptor;
+    rcl_interfaces::msg::FloatingPointRange range;
+    range.from_value = from;
+    range.to_value = to;
+    range.step = 0.0;
+    descriptor.floating_point_range.push_back(range);
+    double declared = 0.0;
+    try {
+      declared = this->declare_parameter<double>(name, value, descriptor);
+    } catch (const rclcpp::exceptions::InvalidParameterValueException &) {
+      throwOutOfRange(name, overrideText(name), rangeText(from, to));
+    }
+    if (!std::isfinite(declared)) {  // a NaN passes the range check
+      throwOutOfRange(name, overrideText(name), rangeText(from, to));
+    }
+    return declared;
+  }
+
 public:
-  ROS_handler(const std::string &mapname, float threshold)
-      : Node("incremental_decomposer"), mapname_(mapname),
-        Decomp_threshold_(
-            this->declare_parameter<double>("decomp_threshold", threshold)) {
+  ROS_handler(const std::string &mapname, float threshold,
+              const rclcpp::NodeOptions &options = rclcpp::NodeOptions())
+      : Node("incremental_decomposer", options), mapname_(mapname),
+        Decomp_threshold_(static_cast<float>(
+            declareFloating("decomp_threshold", threshold, 0.001, 1000.0))) {
     const std::string default_maps_path =
         ament_index_cpp::get_package_share_directory("inc_dude") + "/maps";
     maps_path_ = this->declare_parameter<std::string>("maps_path",
@@ -105,26 +175,36 @@ public:
     this->declare_parameter<std::string>("save_file_name", "segmentation");
     const std::string tagged_image_topic = this->declare_parameter<std::string>(
         "tagged_image_topic", "/tagged_image");
-    const int publish_period_ms =
-        this->declare_parameter<int>("publish_period_ms", 500);
-    valid_space_threshold_ =
-        this->declare_parameter<int>("valid_space_threshold", 101);
-    free_space_threshold_ =
-        this->declare_parameter<int>("free_space_threshold", 10);
-    occupied_min_threshold_ =
-        this->declare_parameter<int>("occupied_min_threshold", 90);
-    occupied_max_threshold_ =
-        this->declare_parameter<int>("occupied_max_threshold", 100);
-    obstacle_filter_size_ =
-        this->declare_parameter<int>("obstacle_filter_size", 2);
-    free_space_filter_size_ =
-        this->declare_parameter<int>("free_space_filter_size", 10);
-    obstacle_dilation_iterations_ =
-        this->declare_parameter<int>("obstacle_dilation_iterations", 4);
-    offline_image_resolution_ = this->declare_parameter<double>(
-        "offline_image_resolution", 0.05);
-    offline_free_threshold_ =
-        this->declare_parameter<int>("offline_free_threshold", 250);
+    const int publish_period_ms = static_cast<int>(
+        declareInteger("publish_period_ms", 500, 1, 3600000));
+    // Occupancy values as image pixels: 0 to 100, unknown (-1) is 255; a
+    // "below" threshold of 256 takes every pixel.
+    valid_space_threshold_ = static_cast<int>(
+        declareInteger("valid_space_threshold", 101, 0, 256));
+    free_space_threshold_ = static_cast<int>(
+        declareInteger("free_space_threshold", 10, 0, 256));
+    occupied_min_threshold_ = static_cast<int>(
+        declareInteger("occupied_min_threshold", 90, 0, 255));
+    occupied_max_threshold_ = static_cast<int>(
+        declareInteger("occupied_max_threshold", 100, 0, 255));
+    if (occupied_min_threshold_ > occupied_max_threshold_) {
+      throw std::invalid_argument(
+          "Parameters 'occupied_min_threshold' = " +
+          std::to_string(occupied_min_threshold_) +
+          " and 'occupied_max_threshold' = " +
+          std::to_string(occupied_max_threshold_) +
+          ": the minimum must not exceed the maximum");
+    }
+    obstacle_filter_size_ = static_cast<int>(
+        declareInteger("obstacle_filter_size", 2, 1, 1000));
+    free_space_filter_size_ = static_cast<int>(
+        declareInteger("free_space_filter_size", 10, 1, 1000));
+    obstacle_dilation_iterations_ = static_cast<int>(
+        declareInteger("obstacle_dilation_iterations", 4, 0, 1000));
+    offline_image_resolution_ =
+        declareFloating("offline_image_resolution", 0.05, 0.0001, 100.0);
+    offline_free_threshold_ = static_cast<int>(
+        declareInteger("offline_free_threshold", 250, 0, 255));
 
     declare_region_tracking_parameters();
 
@@ -590,46 +670,48 @@ public:
         this->declare_parameter<bool>("publish_missing_regions", false);
     debug_region_tracking_ =
         this->declare_parameter<bool>("debug_region_tracking", false);
-    adapter_config_.adjacency_distance_cells = this->declare_parameter<double>(
-        "region_tracking.adjacency_distance_cells",
-        adapter_config_.adjacency_distance_cells);
-    adapter_config_.adjacency_min_contact_m = this->declare_parameter<double>(
-        "region_tracking.adjacency_min_contact_m",
-        adapter_config_.adjacency_min_contact_m);
+    const std::string p = "region_tracking.";
+    // Distances, areas and weights: finite and >= 0 (validateConfig);
+    // fractions and ratios in [0, 1].
+    constexpr double kMax = 1e6;
+    adapter_config_.adjacency_distance_cells = declareFloating(
+        p + "adjacency_distance_cells", adapter_config_.adjacency_distance_cells,
+        0.0, kMax);
+    adapter_config_.adjacency_min_contact_m = declareFloating(
+        p + "adjacency_min_contact_m", adapter_config_.adjacency_min_contact_m,
+        0.0, kMax);
 
     inc_dude::TrackerConfig c;
-    const std::string p = "region_tracking.";
     c.min_region_area_m2 =
-        this->declare_parameter<double>(p + "min_region_area_m2", c.min_region_area_m2);
-    c.overlap_sample_step_m = this->declare_parameter<double>(
-        p + "overlap_sample_step_m", c.overlap_sample_step_m);
-    c.gate_min_containment = this->declare_parameter<double>(
-        p + "gate_min_containment", c.gate_min_containment);
-    c.gate_centroid_distance_m = this->declare_parameter<double>(
-        p + "gate_centroid_distance_m", c.gate_centroid_distance_m);
-    c.gate_min_area_ratio = this->declare_parameter<double>(
-        p + "gate_min_area_ratio", c.gate_min_area_ratio);
-    c.weight_iou = this->declare_parameter<double>(p + "weight_iou", c.weight_iou);
-    c.weight_containment = this->declare_parameter<double>(
-        p + "weight_containment", c.weight_containment);
+        declareFloating(p + "min_region_area_m2", c.min_region_area_m2, 0.0, kMax);
+    c.overlap_sample_step_m = declareFloating(
+        p + "overlap_sample_step_m", c.overlap_sample_step_m, 0.0, kMax);
+    c.gate_min_containment = declareFloating(
+        p + "gate_min_containment", c.gate_min_containment, 0.0, 1.0);
+    c.gate_centroid_distance_m = declareFloating(
+        p + "gate_centroid_distance_m", c.gate_centroid_distance_m, 0.0, kMax);
+    c.gate_min_area_ratio = declareFloating(
+        p + "gate_min_area_ratio", c.gate_min_area_ratio, 0.0, 1.0);
+    c.weight_iou = declareFloating(p + "weight_iou", c.weight_iou, 0.0, kMax);
+    c.weight_containment = declareFloating(
+        p + "weight_containment", c.weight_containment, 0.0, kMax);
     c.weight_centroid =
-        this->declare_parameter<double>(p + "weight_centroid", c.weight_centroid);
-    c.weight_area =
-        this->declare_parameter<double>(p + "weight_area", c.weight_area);
-    c.centroid_distance_scale_m = this->declare_parameter<double>(
-        p + "centroid_distance_scale_m", c.centroid_distance_scale_m);
-    c.split_merge_min_fraction = this->declare_parameter<double>(
-        p + "split_merge_min_fraction", c.split_merge_min_fraction);
-    c.retire_min_coverage = this->declare_parameter<double>(
-        p + "retire_min_coverage", c.retire_min_coverage);
-    c.max_missed_updates = static_cast<int>(this->declare_parameter<int>(
-        p + "max_missed_updates", c.max_missed_updates));
-    c.max_area_loss_fraction = this->declare_parameter<double>(
-        p + "max_area_loss_fraction", c.max_area_loss_fraction);
-    c.max_region_overlap_fraction = this->declare_parameter<double>(
-        p + "max_region_overlap_fraction", c.max_region_overlap_fraction);
-    c.max_consecutive_rejections = static_cast<int>(this->declare_parameter<int>(
-        p + "max_consecutive_rejections", c.max_consecutive_rejections));
+        declareFloating(p + "weight_centroid", c.weight_centroid, 0.0, kMax);
+    c.weight_area = declareFloating(p + "weight_area", c.weight_area, 0.0, kMax);
+    c.centroid_distance_scale_m = declareFloating(
+        p + "centroid_distance_scale_m", c.centroid_distance_scale_m, 1e-6, kMax);
+    c.split_merge_min_fraction = declareFloating(
+        p + "split_merge_min_fraction", c.split_merge_min_fraction, 0.0, 1.0);
+    c.retire_min_coverage = declareFloating(
+        p + "retire_min_coverage", c.retire_min_coverage, 0.0, 1.0);
+    c.max_missed_updates = static_cast<int>(declareInteger(
+        p + "max_missed_updates", c.max_missed_updates, 0, kMaxInt));
+    c.max_area_loss_fraction = declareFloating(
+        p + "max_area_loss_fraction", c.max_area_loss_fraction, 0.0, 1.0);
+    c.max_region_overlap_fraction = declareFloating(
+        p + "max_region_overlap_fraction", c.max_region_overlap_fraction, 0.0, 1.0);
+    c.max_consecutive_rejections = static_cast<int>(declareInteger(
+        p + "max_consecutive_rejections", c.max_consecutive_rejections, 0, kMaxInt));
 
     const std::string config_error = inc_dude::validateConfig(c);
     if (!config_error.empty()) {

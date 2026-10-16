@@ -237,6 +237,9 @@ if(BUILD_TESTING)
     ENV "GTEST_FILTER=DudeReference.*"
     TIMEOUT 300)
   ament_target_dependencies(test_inc_dude_node ${ROS_DEPENDENCIES})
+  # M-24: the shipped parameter file loads.
+  target_compile_definitions(test_inc_dude_node PRIVATE
+    INC_DUDE_PARAMS_FILE="${CMAKE_CURRENT_SOURCE_DIR}/config/inc_dude_params.yaml")
   target_link_options(test_inc_dude_node PRIVATE -no-pie)
   target_link_libraries(test_inc_dude_node
     inc_dude_region_msgs
