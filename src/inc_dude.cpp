@@ -276,7 +276,17 @@ public:
     //*/
     cv::flip(black_image, black_image, 0);
     image2save_black = black_image.clone();
-    grad = Stable.draw_stable_contour() & ~black_image;
+    // N-1: the stable graph has the size of the last map it was decomposed
+    // from, or none (no free region yet); draw it only over a map of that size.
+    if (Stable.image_size == black_image.size()) {
+      grad = Stable.draw_stable_contour() & ~black_image;
+    } else {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                           "No regions of this %d x %d map yet; the region "
+                           "image is empty",
+                           black_image.cols, black_image.rows);
+      grad = cv::Mat::zeros(black_image.size(), CV_8UC1);
+    }
     //			grad = image_cleaned;
 
     image2save_Inc = grad.clone();

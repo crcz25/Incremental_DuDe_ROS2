@@ -177,6 +177,37 @@ nav_msgs::msg::OccupancyGrid::SharedPtr twoRoomMap() {
 
 }  // namespace
 
+namespace {
+
+// A map of 0.05 m whose cells are all `value`.
+nav_msgs::msg::OccupancyGrid::SharedPtr uniformMap(int8_t value, unsigned width,
+                                                   unsigned height) {
+  auto map = std::make_shared<nav_msgs::msg::OccupancyGrid>();
+  map->header.frame_id = "map";
+  map->info.resolution = 0.05f;
+  map->info.width = width;
+  map->info.height = height;
+  map->info.origin.orientation.w = 1.0;
+  map->data.assign(std::size_t{width} * height, value);
+  return map;
+}
+
+}  // namespace
+
+// N-1: the map callback draws the stable contours over the obstacles
+// (Stable.draw_stable_contour() & ~black_image) outside the try block of the
+// decomposition. When the stable graph is not of the map's size (no
+// decomposition succeeded yet, or the last good one was of a smaller map),
+// cv::operator& throws out of the subscription callback and ends the node.
+TEST_F(IncDudeNode, N1_AMapWithoutFreeSpaceDoesNotThrow) {
+  EXPECT_NO_THROW(node_->mapCallback(uniformMap(100, 160, 120)));
+}
+
+TEST_F(IncDudeNode, N1_AGrownMapWithoutFreeSpaceDoesNotThrow) {
+  node_->mapCallback(twoRoomMap());
+  EXPECT_NO_THROW(node_->mapCallback(uniformMap(100, 200, 150)));
+}
+
 // H-01: the save names the files; a name that leaves the output directory
 // must not write anything, a plain name saves both images.
 TEST_F(IncDudeNode, H01_SaveTriggerNamesCannotLeaveTheOutputDirectory) {
