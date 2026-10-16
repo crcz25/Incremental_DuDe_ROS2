@@ -1,3 +1,4 @@
+#pragma once  // M-26
 #include <memory>
 
 // openCV

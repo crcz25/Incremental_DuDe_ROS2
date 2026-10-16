@@ -1,3 +1,4 @@
+#pragma once  // M-26
 // openCV
 #include <opencv2/imgproc/imgproc.hpp>
 
