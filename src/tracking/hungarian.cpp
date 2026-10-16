@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
+#include <string>
 
 namespace inc_dude {
 
@@ -72,6 +74,16 @@ solveAssignment(const std::vector<std::vector<double>> &cost) {
   const int rows = static_cast<int>(cost.size());
   if (rows == 0) {
     return {};
+  }
+  // P1-N2 (as L-13 in scene_graph_core): the column count is the first
+  // row's; every row must have it.
+  for (size_t i = 1; i < cost.size(); ++i) {
+    if (cost[i].size() != cost.front().size()) {
+      throw std::invalid_argument(
+          "solveAssignment: row " + std::to_string(i) + " has " +
+          std::to_string(cost[i].size()) + " columns, row 0 has " +
+          std::to_string(cost.front().size()));
+    }
   }
   const int cols = static_cast<int>(cost.front().size());
   std::vector<int> result(rows, -1);

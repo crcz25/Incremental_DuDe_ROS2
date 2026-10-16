@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <limits>
+#include <stdexcept>
+#include <vector>
 
 #include "inc_dude/hungarian.hpp"
 #include "inc_dude/region_geometry.hpp"
@@ -79,6 +81,17 @@ TEST(Hungarian, PrefersGloballyConsistentAssignmentOverGreedy) {
   ASSERT_EQ(a.size(), 2u);
   EXPECT_EQ(a[0], 1);
   EXPECT_EQ(a[1], 0);
+}
+
+// P1-N2 (as L-13 in scene_graph_core): the column count is the first row's;
+// a row of another length is rejected instead of read past its end (or
+// silently cut).
+TEST(Hungarian, P1N2_RejectsARaggedMatrix) {
+  EXPECT_THROW(solveAssignment({{1.0, 2.0}, {1.0}}), std::invalid_argument);
+  EXPECT_THROW(solveAssignment({{1.0}, {1.0, 2.0}}), std::invalid_argument);
+  EXPECT_THROW(solveAssignment({{1.0, 2.0}, {1.0, 2.0}, {}}), std::invalid_argument);
+  EXPECT_THROW(solveAssignment({{}, {1.0}}), std::invalid_argument);
+  EXPECT_EQ(solveAssignment({{}, {}}), (std::vector<int>{-1, -1}));
 }
 
 TEST(Hungarian, MinimizesCostAndHandlesRectangularAndInfeasible) {
