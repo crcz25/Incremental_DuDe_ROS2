@@ -134,6 +134,25 @@ Round 2 changes 30 lines of DuDe (0012: 11, 0013: 11, 0014: 4, 0015: 4).
 Round 1 changed 147 lines. The net difference of the patched DuDe from
 the unpatched one is +161 / −12.
 
+## Known limit: DP-12 (not fixed)
+
+`cutPolys_new` (`dude_cut.cpp:364`) cannot cut three of the reference
+inputs: `lab_f_scan` and `lab_f_scan_furnitures` at τ 50 px and
+`NLB_furnitures` at τ 20 px. Unpatched DuDe crashes on the same two τ 50
+inputs.
+
+- With asserts on (no build type, as in the tests and CI) the assertion
+  calls `abort()`.
+- With `NDEBUG` (`RelWithDebInfo`, the production build in
+  `docker/entrypoint.sh`) a null vertex reaches CGAL at the next level:
+  SIGSEGV.
+- Either way the process ends. A signal is not a C++ exception, so the
+  `try`/`catch` around `decompose_image` in `inc_dude.cpp` cannot catch it.
+
+Decision (owner, 2026-10-16, Phase 5 item G1-4): accept the limit and
+record it here. No wrapper check and no patch 0016. A map that hits this
+cut ends `inc_dude`; the launch files restart nothing.
+
 ## Not DuDe patches
 
 - `src/wrapper.cpp` (`include/wrapper.cpp` before L-17) clears DuDe's
