@@ -95,14 +95,12 @@ Blur........ "; Image_in = Median_Image & ~black_image; cout << "And........ ";
 */
   ///////////////////////////////
   //// Look for the big contours
-  std::cout << "Finding Contours....... ";
-  double start_finding = getTime();
+  // L-02: no console output per decomposition (it ran on every map).
   std::vector<std::vector<cv::Point>> Explored_contour;
   std::vector<cv::Vec4i> hierarchy; //[Next, Previous, First_Child, Parent]
   cv::findContours(Occ_Image, Explored_contour, hierarchy, cv::RETR_TREE,
                    cv::CHAIN_APPROX_SIMPLE);
   if (Explored_contour.empty()) { // no free space inside this mask
-    std::cout << "no contours" << std::endl;
     return cv::Rect();
   }
 
@@ -119,13 +117,9 @@ Blur........ "; Image_in = Median_Image & ~black_image; cout << "And........ ";
       Big_Contour_Index = current_index;
     }
   }
-  double end_finding = getTime();
-  cout << "done, it last " << (end_finding - start_finding) << " ms" << endl;
   Parent_contour = Explored_contour[Big_Contour_Index];
   /////////////////////////////
   //// Insert contours in Dual-Space Decomposer
-  std::cout << "Inserting contours ....... ";
-  double start_inserting = getTime();
 
   c_polygon polygons;
   {
@@ -144,14 +138,10 @@ Blur........ "; Image_in = Median_Image & ~black_image; cout << "And........ ";
       current_child = hierarchy[current_child][0];
     }
   }
-  double end_inserting = getTime();
-  cout << "done, it last " << (end_inserting - start_inserting) << " ms"
-       << endl;
 
   ////////////////////////////////
   //// Decompose
   //		cout << "Polygons size " << polygons.size() << endl;
-  cout << "- Dual-space Decomposition with tau=" << g_tau << endl;
   float r = polygons.front().getRadius();
 
   if (tolerance_in_pixels) {
@@ -159,13 +149,9 @@ Blur........ "; Image_in = Median_Image & ~black_image; cout << "And........ ";
   } else {
     g_tau *= r; // Scale the concavity variable if tau is fractional
   }
-  double start_dude = getTime();
   ///////////////
   Dual_decompose(polygons);
   //////////////
-  double end_dude = getTime();
-  cout << "done, decomposing " << finalPolygonPieces.size() << " polygons last "
-       << (end_dude - start_dude) << " ms" << endl;
 
   ////////////////////////
   // Export files
